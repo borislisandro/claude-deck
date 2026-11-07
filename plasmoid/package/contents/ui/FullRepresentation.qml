@@ -27,10 +27,10 @@ PlasmaExtras.Representation {
         RowLayout {
             anchors.fill: parent
             spacing: Kirigami.Units.smallSpacing
-            Spark {
-                size: 18
-                color: Plasmoid.configuration.claudeColoredGlyph ? "#d97757" : Kirigami.Theme.textColor
-                spinning: (full.deckRoot.deck.counts || {}).working > 0 && Plasmoid.configuration.spinWhileWorking
+            Critter {
+                px: 2
+                mood: (full.deckRoot.deck.counts || {}).working > 0 ? "running" : "idle"
+                body: Plasmoid.configuration.claudeColoredGlyph ? "#d97757" : Kirigami.Theme.textColor
                 Layout.leftMargin: Kirigami.Units.smallSpacing
             }
             PlasmaExtras.Heading {

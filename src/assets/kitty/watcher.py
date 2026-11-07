@@ -27,9 +27,40 @@ def _refresh(boss) -> None:
         tm.mark_tab_bar_dirty()
 
 
+_last_order = {'ids': None}
+
+
+def _order(boss) -> list:
+    """Every pane in on-screen order: tabs left to right, and inside a tab
+    reading order (top to bottom, then left to right)."""
+    ids = []
+    for tm in boss.all_tab_managers:
+        for tab in tm:
+            ws = list(tab)
+            ws.sort(key=lambda w: (w.geometry.top // 8, w.geometry.left))
+            ids.extend(w.id for w in ws)
+    return ids
+
+
+def _send_order(boss) -> None:
+    try:
+        ids = _order(boss)
+    except Exception:
+        return
+    if ids != _last_order['ids']:
+        _last_order['ids'] = ids
+        _send({'op': 'order', 'windows': ids})
+
+
+def on_tab_bar_dirty(boss, window, data) -> None:
+    _send_order(boss)
+
+
 def _tick(timer_id) -> None:
     from kitty.boss import get_boss
     boss = get_boss()
+    # Panes moving inside a tab don't touch the tab bar; check the order here too.
+    _send_order(boss)
     try:
         mtime = os.stat(_STATE).st_mtime
     except OSError:

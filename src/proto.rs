@@ -33,6 +33,8 @@ pub enum Request {
     Exited { sid: String, code: Option<i32> },
     Focus { kitty_window: u64, focused: bool },
     Closed { kitty_window: u64 },
+    /// Every kitty pane in on-screen order (from the watcher).
+    Order { windows: Vec<u64> },
 
     // Queries.
     State,

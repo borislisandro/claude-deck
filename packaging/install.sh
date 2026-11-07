@@ -3,7 +3,7 @@
 #
 #   packaging/install.sh                 build, install the binary, widget, icon, launcher, shortcuts
 #   packaging/install.sh --add-to-panel  also put the island on your top panel, left of the
-#                                        first system monitor widget
+#                                        first system monitor widget, as its own island
 #   packaging/install.sh --uninstall     remove everything again
 set -euo pipefail
 
@@ -79,6 +79,20 @@ for (const p of panels()) {
         w = p.addWidget(id);
     }
     w.globalShortcut = "Meta+Alt+C";
+    if (anchor) {
+        // Panel Colorizer starts a new island at each spacer: keep the Claude island
+        // separate from the system monitors with a small fixed spacer.
+        const g = anchor.geometry;
+        const s = p.addWidget("org.kde.plasma.panelspacer", g.x + 1, g.y + g.height / 2, 1, 1);
+        s.currentConfigGroup = ["General"];
+        s.writeConfig("expanding", false);
+        s.writeConfig("length", 8);
+    }
+    if (p.widgets("luisbocanegra.panel.colorizer").length > 0) {
+        // Colorizer draws the island; don't draw a second pill inside it.
+        w.currentConfigGroup = ["General"];
+        w.writeConfig("ownBackground", false);
+    }
     done = true;
     print("added");
 }

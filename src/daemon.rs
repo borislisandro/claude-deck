@@ -354,6 +354,12 @@ async fn handle(sh: &Sh, req: Request) -> Result<Value> {
             }
             Ok(json!({ "ok": true }))
         }
+        Request::Order { windows } => {
+            if sh.store.lock().unwrap().set_order(windows) {
+                changed(sh, vec![]);
+            }
+            Ok(json!({ "ok": true }))
+        }
         Request::State => Ok(state_json(sh)),
         Request::Watch { since } => {
             let mut rx = sh.rev.subscribe();

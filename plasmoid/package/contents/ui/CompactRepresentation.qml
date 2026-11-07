@@ -16,8 +16,10 @@ Item {
     readonly property bool running: deckRoot.running
     readonly property var sessions: deckRoot.sessions
     readonly property bool collapsed: sessions.length > Plasmoid.configuration.collapseAfter
-    readonly property real glyph: Math.max(12, Math.min(20, Math.round(height * 0.46)))
-    readonly property real pad: Math.round(glyph * 0.55)
+    /// Critter pixel size: whole pixels, as large as the pill allows.
+    readonly property int px: Math.max(2, Math.floor(height * 0.84 / 11))
+    readonly property real glyph: px * 8
+    readonly property real pad: Math.round(px * 4)
     readonly property color attention: deckRoot.unseen > 0
         ? (deckRoot.deck.counts && deckRoot.deck.counts.needs_you > 0 ? Plasmoid.configuration.colorNeedsYou : Plasmoid.configuration.colorYourTurn)
         : "transparent"
@@ -57,7 +59,7 @@ Item {
     Rectangle {
         id: pill
         anchors.centerIn: parent
-        height: Math.round(compact.height * 0.74)
+        height: Math.min(compact.height, Math.max(Math.round(compact.height * 0.74), compact.px * 11 + 4))
         width: content.implicitWidth + compact.pad * 2
         radius: height / 2
         color: Plasmoid.configuration.ownBackground
@@ -88,15 +90,17 @@ Item {
         RowLayout {
             id: content
             anchors.centerIn: parent
-            spacing: Math.round(compact.glyph * 0.35)
+            spacing: compact.px * 3
 
-            // Deck running but no sessions yet (picker open): just the spark.
-            Spark {
+            // Deck running but no sessions yet (picker open), or collapsed: one critter.
+            Critter {
                 visible: compact.sessions.length === 0 || compact.collapsed
-                size: compact.glyph * 0.92
-                color: Plasmoid.configuration.claudeColoredGlyph ? "#d97757" : Kirigami.Theme.textColor
-                spinning: compact.collapsed && compact.deckRoot.deck.counts && compact.deckRoot.deck.counts.working > 0
-                    && Plasmoid.configuration.spinWhileWorking
+                px: compact.px
+                mood: compact.sessions.length === 0 ? "idle"
+                    : ((compact.deckRoot.deck.counts || {}).working > 0 ? "running" : "resting")
+                body: Plasmoid.configuration.claudeColoredGlyph ? "#d97757" : Kirigami.Theme.textColor
+                animated: Plasmoid.configuration.spinWhileWorking
+                Layout.alignment: Qt.AlignVCenter
             }
 
             Repeater {
@@ -105,7 +109,7 @@ Item {
                     required property var modelData
                     session: modelData
                     deckRoot: compact.deckRoot
-                    glyphSize: compact.glyph
+                    px: compact.px
                     Layout.alignment: Qt.AlignVCenter
                 }
             }

@@ -25,6 +25,7 @@ const GREY: Color = Color::Rgb(0x7a, 0x6a, 0x6c);
 
 #[derive(Clone, Debug)]
 enum Entry {
+    Here(String),
     Restore(usize, String),
     Project { path: String, name: String, recent: bool },
     Typed(String),
@@ -33,6 +34,7 @@ enum Entry {
 impl Entry {
     fn key(&self) -> String {
         match self {
+            Entry::Here(p) => p.clone(),
             Entry::Restore(_, names) => format!("restore {names}"),
             Entry::Project { path, .. } => path.clone(),
             Entry::Typed(p) => p.clone(),
@@ -151,12 +153,25 @@ pub enum Picked {
 pub fn pick() -> Result<Picked> {
     let cfg = Config::load();
     let saved = daemon::load_workspace();
+    // Restoring only makes sense into an empty deck.
+    let deck_has_sessions = proto::call(&Request::State, Duration::from_millis(500))
+        .ok()
+        .and_then(|v| v["sessions"].as_array().map(|a| !a.is_empty()))
+        .unwrap_or(false);
     let mut all: Vec<Entry> = vec![];
-    if !saved.is_empty() {
+    // The folder this picker was opened from (F4/Shift+F5 keep the pane's folder) comes first.
+    let here = std::env::current_dir().ok().map(|d| d.display().to_string()).filter(|d| Path::new(d) != paths::home());
+    if let Some(h) = &here {
+        all.push(Entry::Here(h.clone()));
+    }
+    if !saved.is_empty() && !deck_has_sessions {
         let names: Vec<String> = saved.iter().map(|s| s.project.clone()).collect();
         all.push(Entry::Restore(saved.len(), names.join(", ")));
     }
     for (p, recent) in projects(&cfg) {
+        if here.as_deref() == Some(p.as_str()) {
+            continue;
+        }
         let name = crate::state::project_name(&p);
         all.push(Entry::Project { path: p, name, recent });
     }
@@ -170,7 +185,7 @@ pub fn pick() -> Result<Picked> {
             .enumerate()
             .filter_map(|(i, e)| {
                 let hay = match e {
-                    Entry::Project { path, .. } => short(path),
+                    Entry::Project { path, .. } | Entry::Here(path) => short(path),
                     other => other.key(),
                 };
                 fuzzy(&query, &hay).map(|s| (s, i, e.clone()))
@@ -209,6 +224,12 @@ pub fn pick() -> Result<Picked> {
             let items: Vec<ListItem> = entries
                 .iter()
                 .map(|e| match e {
+                    Entry::Here(p) => ListItem::new(Line::from(vec![
+                        Span::styled(" ↳ ", Style::default().fg(GREEN)),
+                        Span::styled(format!("{:<28}", crate::state::project_name(p)), Style::default().add_modifier(Modifier::BOLD)),
+                        Span::styled(format!("{}  ", short(p)), Style::default().fg(MUTED)),
+                        Span::styled("same folder", Style::default().fg(GREEN)),
+                    ])),
                     Entry::Restore(n, names) => ListItem::new(Line::from(vec![
                         Span::styled(" ↻ ", Style::default().fg(YELLOW)),
                         Span::styled(format!("Restore last workspace ({n})"), Style::default().add_modifier(Modifier::BOLD)),
@@ -254,7 +275,7 @@ pub fn pick() -> Result<Picked> {
             KeyCode::Enter => match state.selected().and_then(|i| entries.get(i)) {
                 Some(Entry::Restore(..)) => break Picked::Restore,
                 Some(Entry::Project { path, .. }) => break Picked::Project(path.clone()),
-                Some(Entry::Typed(p)) => break Picked::Project(p.clone()),
+                Some(Entry::Typed(p)) | Some(Entry::Here(p)) => break Picked::Project(p.clone()),
                 None => {}
             },
             KeyCode::Up => state.select_previous(),

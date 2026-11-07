@@ -43,11 +43,11 @@ KCM.SimpleKCM {
         }
         QQC2.CheckBox {
             id: spinWhileWorking
-            text: i18n("Spin the spark while Claude works")
+            text: i18n("Animate the critters (running, thinking, resting)")
         }
         QQC2.CheckBox {
             id: claudeColoredGlyph
-            text: i18n("Claude-orange spark")
+            text: i18n("Claude-orange critters")
         }
         QQC2.CheckBox {
             id: ownBackground

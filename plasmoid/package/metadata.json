@@ -8,7 +8,7 @@
         ],
         "Category": "System Information",
         "Description": "Live status of your Claude Code deck sessions, right on the panel",
-        "Icon": "utilities-terminal",
+        "Icon": "claude-deck",
         "Id": "com.borislisandro.claudedeck",
         "License": "MIT",
         "Name": "Claude Deck",

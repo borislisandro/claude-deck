@@ -27,8 +27,13 @@ Item {
         RowLayout {
             spacing: Kirigami.Units.smallSpacing
             Layout.fillWidth: true
+            Critter {
+                px: 2
+                mood: card.deckRoot.moodFor(card.session.status)
+                accent: card.tint
+            }
             StatusDot {
-                size: 9
+                size: 8
                 status: card.session.status
                 seen: card.session.seen
                 color: card.tint

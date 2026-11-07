@@ -7,11 +7,14 @@ notification and nothing reminds you afterwards, so the session just sits there.
 keeps every session's state on the top bar, where you'll see it:
 
 ```
- ⌘ Chrome            Sat 7 Nov 13:33        ( ✳● ✳● ✳● )  CPU 52°C  GPU 44°C  ☁ 21°
-                                               │   │   └ red    your turn: finished, waiting for your next prompt
-                                               │   └ yellow     needs you: a permission prompt, a question, a plan
-                                               └ green          working
+ ⌘ Chrome            Sat 7 Nov 13:33      ( 🦀● 🦀● 🦀● )  ( CPU 52°C  GPU 44°C )  ☁ 21°
+                                             │    │    └ red     resting: finished, your turn (z's float up)
+                                             │    └ yellow       thinking: needs an answer (thought bubble)
+                                             └ green             running: Claude is working
 ```
+
+Each session gets a little pixel critter on its own island. Its antenna glows in the session's
+status color and its light sits right beside it.
 
 The island only exists while the deck runs. Hover a session to peek at its pane, click it to jump there.
 
@@ -23,11 +26,12 @@ The island only exists while the deck runs. Hover a session to peek at its pane,
 - **Status from Claude Code hooks, not screen scraping.** Every deck session runs
   `claude --settings <deck hooks>`, so your own `~/.claude/settings.json` is never touched.
   Pressing Esc mid-turn is detected from the transcript, since Claude fires no hook for it.
-- **The island.** One spark and status light per session:
-  - green breathes while Claude works
-  - yellow blinks with a ripple when Claude needs you
-  - red ripples until you've looked, then dims
-  - grey hollow when Claude has exited
+- **The island.** One critter and status light per session, in the same order as the deck's tabs
+  and panes (move a tab and the island follows):
+  - the critter runs, with a breathing green light, while Claude works
+  - it thinks, with a blinking yellow light and a ripple, when Claude needs you
+  - it rests, with a red light that ripples until you've looked, when the turn is over
+  - it turns grey when Claude has exited
 
   Waits over a minute show a timer. Six or more sessions collapse to per-state counts.
 - **Hover:** a card with project, branch, state, last action, last prompt and the pane's last lines.
@@ -54,19 +58,26 @@ The island only exists while the deck runs. Hover a session to peek at its pane,
 | anywhere | **Meta+C** | open / show / hide the deck |
 | anywhere | **Meta+Shift+C** | jump to the session waiting longest |
 | anywhere | **Meta+Alt+C** | open the island popup |
-| deck | Ctrl+Shift+N | new session in a new tab (project picker) |
-| deck | Ctrl+Shift+Enter / Ctrl+Shift+- | new session split beside / below, same folder |
-| deck | Ctrl+Shift+Alt+Enter | split beside, pick the folder |
+| deck | **F4** | new session in a new tab next to this one (picker; Enter keeps this folder) |
+| deck | Shift+F4 | new tab, same folder, no picker |
+| deck | **F5** / Shift+F5 | new session side by side (same folder / pick one) |
+| deck | **F6** / Shift+F6 | new session below (same folder / pick one) |
+| deck | **F7** | close the pane (asks first if Claude is working) |
+| deck | Shift+F7 | move the pane out into its own tab |
+| deck | **F8** | zoom the pane on/off |
 | deck | **Ctrl+Shift+Space** | jump to the session waiting longest |
-| deck | Ctrl+1 … Ctrl+9 | go to session N |
+| deck | Ctrl+1 … Ctrl+9 | go to session N (the island's numbering) |
+| deck | Ctrl+PgUp / Ctrl+PgDn | previous / next tab |
+| deck | Ctrl+Shift+PgUp / PgDn | move the tab left / right |
 | deck | Ctrl+Shift+O | session overview |
 | deck | Alt+arrows, Alt+h/j/k/l | move between panes |
 | deck | Alt+Shift+arrows | move the pane |
 | deck | Ctrl+Alt+Shift+arrows | resize the pane |
-| deck | Ctrl+Shift+L / Ctrl+Shift+Z | cycle layouts / zoom the pane |
+| deck | Ctrl+Shift+L | cycle layouts |
 | deck | Ctrl+Shift+G / Ctrl+Shift+U | tile all sessions in one tab / spread them back into tabs |
-| deck | Ctrl+Shift+W | close the pane (asks first if Claude is working) |
 | deck | Ctrl+Shift+R | restore the last workspace |
+
+Ctrl+Shift+N, Ctrl+Shift+Enter and Ctrl+Shift+- also work, the same as F4, F5 and F6.
 
 ## Install
 
@@ -79,7 +90,8 @@ packaging/install.sh --add-to-panel   # or without the flag, then add "Claude De
 ```
 
 The installer builds the binary into `~/.local/bin`, installs the panel widget, a launcher
-("Claude Deck") and the global shortcuts. `packaging/install.sh --uninstall` removes everything.
+("Claude Deck") and the global shortcuts. With `--add-to-panel` it also places the island left of
+your first system monitor, with a small spacer so Panel Colorizer gives it an island of its own. `packaging/install.sh --uninstall` removes everything.
 
 ## Use
 
@@ -96,7 +108,7 @@ claude-deck quit
 ## Configure
 
 - **Panel look and behavior:** right-click the island, then *Configure Claude Deck…*. Options:
-  colors, the orange or monochrome spark, timers, peek on hover, thumbnail, and whether the island
+  colors, orange or monochrome critters, animations on/off, timers, peek on hover, thumbnail, and whether the island
   draws its own background (turn this off if Panel Colorizer already draws islands).
 - **Daemon:** `~/.config/claude-deck/config.json`. Every key is optional:
 

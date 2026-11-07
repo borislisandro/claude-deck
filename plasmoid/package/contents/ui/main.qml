@@ -39,7 +39,7 @@ PlasmoidItem {
     Plasmoid.status: !running ? PlasmaCore.Types.HiddenStatus
         : unseen > 0 ? PlasmaCore.Types.NeedsAttentionStatus
         : PlasmaCore.Types.ActiveStatus
-    Plasmoid.icon: "utilities-terminal"
+    Plasmoid.icon: "claude-deck"
     Plasmoid.title: "Claude Deck"
     toolTipMainText: "Claude Deck"
     toolTipSubText: running ? deck.summary : i18n("Not running")
@@ -88,6 +88,16 @@ PlasmoidItem {
         case "needs_you": return Plasmoid.configuration.colorNeedsYou
         case "your_turn": return seen ? Qt.darker(Plasmoid.configuration.colorYourTurn, 1.45) : Plasmoid.configuration.colorYourTurn
         default: return Plasmoid.configuration.colorExited
+        }
+    }
+
+    /// What the session's critter is doing.
+    function moodFor(status) {
+        switch (status) {
+        case "working": return "running"
+        case "needs_you": return "thinking"
+        case "your_turn": return "resting"
+        default: return "exited"
         }
     }
 

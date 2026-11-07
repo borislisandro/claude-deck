@@ -78,6 +78,11 @@ pub struct Store {
     /// While the panel is peeking, focus changes inside kitty are not the user looking.
     pub peeking: bool,
     next_index: u32,
+    /// Every kitty pane in on-screen order; sessions are kept (and numbered) in it.
+    order: Vec<u64>,
+    /// Sessions whose pane was closed. Claude's last hooks (SessionEnd) arrive after
+    /// the pane is gone and must not bring the session back.
+    closed: std::collections::HashSet<String>,
 }
 
 pub fn project_name(cwd: &str) -> String {
@@ -165,6 +170,7 @@ impl Store {
     /// (resume after an exit) keeps its place in the order.
     pub fn register(&mut self, sid: &str, kitty_window: Option<u64>, cwd: &str, now: u64) {
         self.rev += 1;
+        self.closed.remove(sid);
         if let Some(s) = self.get_mut(sid) {
             s.kitty_window = kitty_window.or(s.kitty_window);
             s.cwd = cwd.to_string();
@@ -199,12 +205,34 @@ impl Store {
         self.renumber();
     }
 
+    /// Panes not yet in the order (just opened) go last, oldest first.
     fn renumber(&mut self) {
-        self.sessions.sort_by_key(|s| s.created);
+        let order = &self.order;
+        self.sessions.sort_by_key(|s| {
+            let pos = s.kitty_window.and_then(|w| order.iter().position(|x| *x == w)).unwrap_or(usize::MAX);
+            (pos, s.created)
+        });
         for (i, s) in self.sessions.iter_mut().enumerate() {
             s.index = i as u32 + 1;
         }
         self.next_index = self.sessions.len() as u32;
+    }
+
+    /// kitty reported the on-screen order of its panes. True if the island order changed.
+    pub fn set_order(&mut self, windows: Vec<u64>) -> bool {
+        if self.order == windows {
+            return false;
+        }
+        self.order = windows;
+        let before: Vec<(String, u32)> = self.sessions.iter().map(|s| (s.sid.clone(), s.index)).collect();
+        self.renumber();
+        let after: Vec<(String, u32)> = self.sessions.iter().map(|s| (s.sid.clone(), s.index)).collect();
+        if before != after {
+            self.rev += 1;
+            true
+        } else {
+            false
+        }
     }
 
     fn set_status(&mut self, sid: &str, to: Status, now: u64) -> Option<Transition> {
@@ -231,7 +259,13 @@ impl Store {
     pub fn apply_hook(&mut self, sid: &str, kitty_window: Option<u64>, p: &Value, now: u64) -> Option<Transition> {
         let event = p.get("hook_event_name").and_then(Value::as_str).unwrap_or("");
         let cwd = p.get("cwd").and_then(Value::as_str).unwrap_or("");
+        if self.closed.contains(sid) {
+            return None;
+        }
         if self.get(sid).is_none() {
+            if event == "SessionEnd" {
+                return None;
+            }
             self.register(sid, kitty_window, if cwd.is_empty() { "/" } else { cwd }, now);
         }
         self.rev += 1;
@@ -424,6 +458,7 @@ impl Store {
     pub fn window_closed(&mut self, win: u64) -> Option<Session> {
         let pos = self.sessions.iter().position(|s| s.kitty_window == Some(win))?;
         let s = self.sessions.remove(pos);
+        self.closed.insert(s.sid.clone());
         if self.focused_window == Some(win) {
             self.focused_window = None;
         }
@@ -660,6 +695,34 @@ mod tests {
         assert_eq!(st.sessions.len(), 1);
         assert_eq!(st.get("b").unwrap().index, 1);
         assert_eq!(st.summary(), "1 your turn");
+    }
+
+    #[test]
+    fn late_hooks_do_not_revive_a_closed_pane() {
+        let mut st = store_with_session();
+        st.window_closed(7);
+        assert!(st.apply_hook("s1", Some(7), &hook("SessionEnd", json!({"reason": "other"})), 10).is_none());
+        assert!(st.apply_hook("s1", Some(7), &hook("Stop", json!({})), 11).is_none());
+        assert!(st.sessions.is_empty());
+        // A SessionEnd from a session we never knew doesn't create one either.
+        st.apply_hook("zz", Some(9), &hook("SessionEnd", json!({"reason": "other"})), 12);
+        assert!(st.sessions.is_empty());
+    }
+
+    #[test]
+    fn sessions_follow_the_on_screen_order() {
+        let mut st = Store::default();
+        st.register("a", Some(1), "/p/a", 1);
+        st.register("b", Some(2), "/p/b", 2);
+        st.register("c", Some(3), "/p/c", 3);
+        // Tab of c moved first, b's pane left of a's.
+        assert!(st.set_order(vec![3, 9, 2, 1]));
+        let order: Vec<(&str, u32)> = st.sessions.iter().map(|s| (s.sid.as_str(), s.index)).collect();
+        assert_eq!(order, vec![("c", 1), ("b", 2), ("a", 3)]);
+        assert!(!st.set_order(vec![3, 9, 2, 1]), "same order is no change");
+        // A new pane not yet reported goes last.
+        st.register("d", Some(4), "/p/d", 4);
+        assert_eq!(st.get("d").unwrap().index, 4);
     }
 
     #[test]

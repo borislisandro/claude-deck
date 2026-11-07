@@ -17,11 +17,11 @@
       <default>true</default>
     </entry>
     <entry name="spinWhileWorking" type="Bool">
-      <label>Rotate the spark while Claude works</label>
+      <label>Animate the critters (running, thinking, resting)</label>
       <default>true</default>
     </entry>
     <entry name="claudeColoredGlyph" type="Bool">
-      <label>Claude-orange spark (otherwise the panel text color)</label>
+      <label>Claude-orange critters (otherwise the panel text color)</label>
       <default>true</default>
     </entry>
     <entry name="ownBackground" type="Bool">
