@@ -25,7 +25,9 @@ The island only exists while the deck runs. Hover a session to peek at its pane,
   `● 2 JobScraper 4m` in its session's status color.
 - **Status from Claude Code hooks, not screen scraping.** Every deck session runs
   `claude --settings <deck hooks>`, so your own `~/.claude/settings.json` is never touched.
-  Pressing Esc mid-turn is detected from the transcript, since Claude fires no hook for it.
+  Claude fires no hook when you stop it with Esc, so the deck watches for that itself: from the
+  transcript, and from Claude's "esc to interrupt" footer going away. The footer check also
+  catches cancelling before Claude has replied, which leaves no trace in the transcript.
 - **The island.** One critter and status light per session, in the same order as the deck's tabs
   and panes (move a tab and the island follows):
   - the critter runs, with a breathing green light, while Claude works
@@ -101,7 +103,10 @@ claude-deck new ~/code/x --placement vsplit
 claude-deck ls           # sessions and their states
 claude-deck next-waiting --raise
 claude-deck quit
+claude-deck upgrade      # swap in a newly built binary; the open deck and its sessions stay
 ```
+
+`packaging/install.sh` runs `upgrade` for you, so reinstalling never closes your sessions.
 
 `claude-deck --help` lists everything else (peek, tile, tail, digest, restore…).
 

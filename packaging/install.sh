@@ -34,6 +34,8 @@ nice -n 19 ionice -c3 cargo build --release --quiet
 
 say "Installing the binary to $BIN"
 install -Dm755 target/release/claude-deck "$BIN"
+# A running deck keeps its sessions; the daemon is swapped underneath it.
+"$BIN" upgrade 2>/dev/null | sed 's/^/  /' || true
 
 say "Installing the panel widget"
 if kpackagetool6 -t Plasma/Applet -s "$WIDGET_ID" >/dev/null 2>&1; then

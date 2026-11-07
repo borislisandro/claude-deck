@@ -57,6 +57,9 @@ pub struct Session {
     /// Reminder already sent for the current unseen state.
     #[serde(default)]
     pub reminded: bool,
+    /// When the last hook event arrived, in unix milliseconds.
+    #[serde(default)]
+    pub last_event: u64,
 }
 
 /// A status change the daemon may want to announce (notification, sound, phone).
@@ -201,6 +204,7 @@ impl Store {
             exit_code: None,
             created: now,
             reminded: false,
+            last_event: now,
         });
         self.renumber();
     }
@@ -216,6 +220,13 @@ impl Store {
             s.index = i as u32 + 1;
         }
         self.next_index = self.sessions.len() as u32;
+    }
+
+    /// Take over sessions from a previous daemon (`claude-deck upgrade`).
+    pub fn adopt(&mut self, sessions: Vec<Session>) {
+        self.sessions = sessions;
+        self.renumber();
+        self.rev += 1;
     }
 
     /// kitty reported the on-screen order of its panes. True if the island order changed.
@@ -280,6 +291,7 @@ impl Store {
             if kitty_window.is_some() {
                 s.kitty_window = kitty_window;
             }
+            s.last_event = now;
         }
         let tool = p.get("tool_name").and_then(Value::as_str).unwrap_or("");
         let input = p.get("tool_input").cloned().unwrap_or(Value::Null);

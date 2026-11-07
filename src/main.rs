@@ -130,7 +130,12 @@ enum Cmd {
         /// Fake sessions cycling through every state, without kitty (for panel development).
         #[arg(long)]
         demo: bool,
+        /// Take over a running deck kitty (used by `upgrade`).
+        #[arg(long, hide = true)]
+        adopt_kitty: Option<u32>,
     },
+    /// Swap in a newly installed claude-deck without closing the deck or its sessions.
+    Upgrade,
 }
 
 fn call(req: Request) -> Result<Value> {
@@ -165,6 +170,49 @@ fn start_daemon(cwd: Option<PathBuf>) -> Result<()> {
         std::thread::sleep(Duration::from_millis(100));
     }
     anyhow::bail!("the daemon did not start; see {}", paths::log_file().display())
+}
+
+/// Hand the running deck over to this binary: copy the old daemon's sessions,
+/// stop it (without letting it close kitty or its sockets), start ourselves adopting
+/// the same kitty.
+fn upgrade() -> Result<()> {
+    if !proto::daemon_running() {
+        println!("claude-deck is not running; nothing to upgrade");
+        return Ok(());
+    }
+    let state = call(Request::State)?;
+    let kitty_pid = daemon::find_deck_kitty().context("could not find the deck's kitty")?;
+    let old = daemon::find_daemon().context("could not find the running daemon")?;
+    std::fs::write(daemon::handoff_file(), serde_json::to_string(&state["sessions"])?)?;
+    // SIGKILL on purpose: the old daemon's shutdown would remove kitty's socket.
+    unsafe { libc::kill(old as i32, libc::SIGKILL) };
+    for _ in 0..50 {
+        if !std::path::Path::new(&format!("/proc/{old}")).exists() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    let _ = std::fs::remove_file(paths::daemon_socket());
+    std::fs::create_dir_all(paths::state_dir())?;
+    let log = std::fs::OpenOptions::new().create(true).append(true).open(paths::log_file())?;
+    let mut c = std::process::Command::new(paths::self_exe());
+    c.args(["daemon", "--adopt-kitty", &kitty_pid.to_string()]);
+    c.stdin(std::process::Stdio::null()).stdout(log.try_clone()?).stderr(log);
+    unsafe {
+        c.pre_exec(|| {
+            libc::setsid();
+            Ok(())
+        });
+    }
+    c.spawn().context("could not start the new daemon")?;
+    for _ in 0..50 {
+        if proto::daemon_running() {
+            println!("upgraded; {} sessions kept", state["sessions"].as_array().map(|a| a.len()).unwrap_or(0));
+            return Ok(());
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    anyhow::bail!("the new daemon did not start; see {}", paths::log_file().display())
 }
 
 fn print_ls(v: &Value) {
@@ -292,10 +340,11 @@ fn run(cmd: Cmd) -> Result<()> {
             hook::run();
             Ok(())
         }
-        Cmd::Daemon { cwd, demo } => {
+        Cmd::Daemon { cwd, demo, adopt_kitty } => {
             let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build()?;
-            rt.block_on(daemon::run(cwd, demo))
+            rt.block_on(daemon::run(cwd, demo, adopt_kitty))
         }
+        Cmd::Upgrade => upgrade(),
     }
 }
 

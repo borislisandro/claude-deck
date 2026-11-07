@@ -77,7 +77,7 @@ fn ensure_runtime_dir() -> Result<()> {
     Ok(())
 }
 
-pub async fn run(cwd: Option<PathBuf>, demo: bool) -> Result<()> {
+pub async fn run(cwd: Option<PathBuf>, demo: bool, adopt_kitty: Option<u32>) -> Result<()> {
     ensure_runtime_dir()?;
     let sock = paths::daemon_socket();
     if UnixStream::connect(&sock).await.is_ok() {
@@ -96,6 +96,15 @@ pub async fn run(cwd: Option<PathBuf>, demo: bool) -> Result<()> {
     // a panel still long-polling with the old revision.
     let mut store = Store::default();
     store.rev = now_ms();
+    if adopt_kitty.is_some() {
+        // Taking over from the previous daemon: its sessions were handed over in a file.
+        if let Ok(text) = std::fs::read_to_string(handoff_file()) {
+            if let Ok(sessions) = serde_json::from_str::<Vec<Session>>(&text) {
+                store.adopt(sessions);
+            }
+        }
+        let _ = std::fs::remove_file(handoff_file());
+    }
     let sh: Sh = Arc::new(Shared {
         store: Mutex::new(store),
         rev: rev_tx,
@@ -110,6 +119,25 @@ pub async fn run(cwd: Option<PathBuf>, demo: bool) -> Result<()> {
 
     if demo {
         tokio::spawn(demo_loop(sh.clone()));
+    } else if let Some(pid) = adopt_kitty {
+        // Keep the running deck: pick up the new kitty config live and follow its process.
+        *sh.kitty_pid.lock().unwrap() = Some(pid);
+        let conf = paths::kitty_config_dir().join("kitty.conf").display().to_string();
+        if let Err(e) = kitty::rc(&["load-config", &conf]).await {
+            eprintln!("load-config: {e:#}");
+        }
+        let sh2 = sh.clone();
+        tokio::spawn(async move {
+            while Path::new(&format!("/proc/{pid}")).exists() {
+                tokio::time::sleep(Duration::from_secs(1)).await;
+            }
+            eprintln!("adopted kitty {pid} exited");
+            sh2.shutting_down.store(true, std::sync::atomic::Ordering::SeqCst);
+            shutdown();
+        });
+        changed(&sh, vec![]);
+        tokio::spawn(sync_loop(sh.clone()));
+        tokio::spawn(interrupt_loop(sh.clone()));
     } else {
         let start_dir = cwd.clone().unwrap_or_else(paths::home);
         let exe = paths::self_exe().display().to_string();
@@ -130,7 +158,7 @@ pub async fn run(cwd: Option<PathBuf>, demo: bool) -> Result<()> {
             shutdown();
         });
         tokio::spawn(sync_loop(sh.clone()));
-        tokio::spawn(transcript_loop(sh.clone()));
+        tokio::spawn(interrupt_loop(sh.clone()));
     }
     tokio::spawn(reminder_loop(sh.clone()));
 
@@ -163,6 +191,42 @@ pub async fn run(cwd: Option<PathBuf>, demo: bool) -> Result<()> {
             }
         });
     }
+}
+
+pub fn handoff_file() -> PathBuf {
+    paths::runtime_dir().join("handoff.json")
+}
+
+/// The pid of the deck's kitty, found by its command line.
+pub fn find_deck_kitty() -> Option<u32> {
+    find_process(|args| {
+        args.first().is_some_and(|a| a.ends_with("kitty"))
+            && args.windows(2).any(|w| w[0] == "--class" && w[1] == kitty::APP_ID)
+    })
+}
+
+/// The pid of a running `claude-deck daemon` (other than us).
+pub fn find_daemon() -> Option<u32> {
+    let me = std::process::id();
+    find_process(|args| args.first().is_some_and(|a| a.ends_with("claude-deck")) && args.get(1).is_some_and(|a| a == "daemon"))
+        .filter(|p| *p != me)
+}
+
+fn find_process(matches: impl Fn(&[String]) -> bool) -> Option<u32> {
+    let uid = unsafe { libc::getuid() };
+    for entry in std::fs::read_dir("/proc").ok()?.flatten() {
+        let Some(pid) = entry.file_name().to_str().and_then(|n| n.parse::<u32>().ok()) else { continue };
+        use std::os::unix::fs::MetadataExt;
+        if entry.metadata().map(|m| m.uid() != uid).unwrap_or(true) {
+            continue;
+        }
+        let Ok(raw) = std::fs::read(format!("/proc/{pid}/cmdline")) else { continue };
+        let args: Vec<String> = raw.split(|b| *b == 0).filter(|a| !a.is_empty()).map(|a| String::from_utf8_lossy(a).into_owned()).collect();
+        if matches(&args) {
+            return Some(pid);
+        }
+    }
+    None
 }
 
 fn shutdown() -> ! {
@@ -613,31 +677,59 @@ fn tab_tint(s: &Session) -> &'static str {
     }
 }
 
-/// Claude doesn't fire Stop when you interrupt it with Esc; the transcript does
-/// record "[Request interrupted by user]". Watch working sessions' transcripts.
-async fn transcript_loop(sh: Sh) {
+/// Claude fires no hook when you stop it with Esc, so a session would stay green.
+/// Two signals catch it:
+///  - the transcript gets a "[Request interrupted by user]" record (when Claude had
+///    already started answering);
+///  - Claude's footer stops saying "esc to interrupt". This also covers cancelling
+///    before any reply, which leaves no trace in the transcript (the prompt just goes
+///    back into the input box).
+async fn interrupt_loop(sh: Sh) {
     let mut sizes: HashMap<String, u64> = HashMap::new();
-    let mut tick = tokio::time::interval(Duration::from_millis(800));
+    let mut idle_screens: HashMap<String, u32> = HashMap::new();
+    let mut tick = tokio::time::interval(Duration::from_millis(700));
     loop {
         tick.tick().await;
-        let working: Vec<(String, String)> = {
+        let now = now_ms();
+        let working: Vec<(String, Option<String>, Option<u64>, u64)> = {
             let st = sh.store.lock().unwrap();
             st.sessions
                 .iter()
                 .filter(|s| s.status == Status::Working)
-                .filter_map(|s| s.transcript_path.clone().map(|t| (s.sid.clone(), t)))
+                .map(|s| (s.sid.clone(), s.transcript_path.clone(), s.kitty_window, s.last_event))
                 .collect()
         };
-        let live: HashSet<&String> = working.iter().map(|(s, _)| s).collect();
+        let live: HashSet<&String> = working.iter().map(|(s, ..)| s).collect();
         sizes.retain(|k, _| live.contains(k));
-        for (sid, path) in &working {
-            let Ok(meta) = tokio::fs::metadata(path).await else { continue };
-            let len = meta.len();
-            let prev = sizes.insert(sid.clone(), len);
-            if prev.is_none_or(|p| p == len) {
-                continue;
+        idle_screens.retain(|k, _| live.contains(k));
+        for (sid, path, win, last_event) in &working {
+            let mut stopped = false;
+            if let Some(path) = path {
+                if let Ok(meta) = tokio::fs::metadata(path).await {
+                    let len = meta.len();
+                    let prev = sizes.insert(sid.clone(), len);
+                    if prev.is_some_and(|p| p != len) {
+                        stopped = transcript_ends_interrupted(Path::new(path)).unwrap_or(false);
+                    }
+                }
             }
-            if transcript_ends_interrupted(Path::new(path)).unwrap_or(false) {
+            // Give a fresh turn a moment to draw its spinner before trusting the screen.
+            if !stopped && now.saturating_sub(*last_event) > 1500 {
+                if let Some(win) = win {
+                    if let Ok(text) = kitty::rc(&["get-text", &format!("--match=id:{win}"), "--extent=screen"]).await {
+                        let n = idle_screens.entry(sid.clone()).or_insert(0);
+                        if screen_shows_busy(&text) {
+                            *n = 0;
+                        } else {
+                            *n += 1;
+                            // Two looks in a row, so a redraw between tool calls can't fool it.
+                            stopped = *n >= 2;
+                        }
+                    }
+                }
+            }
+            if stopped {
+                idle_screens.remove(sid);
                 let t = sh.store.lock().unwrap().interrupted(sid, now_ms());
                 changed(&sh, t.into_iter().collect());
             }
@@ -645,16 +737,37 @@ async fn transcript_loop(sh: Sh) {
     }
 }
 
+/// Whether Claude's footer says it is busy ("… esc to interrupt").
+pub fn screen_shows_busy(screen: &str) -> bool {
+    screen
+        .lines()
+        .rev()
+        .filter(|l| !l.trim().is_empty())
+        .take(8)
+        .any(|l| l.to_lowercase().contains("esc to interrupt"))
+}
+
+/// Whether the conversation (ignoring Claude's bookkeeping records, which keep
+/// being appended after it) ends with the user interrupting.
 pub fn transcript_ends_interrupted(path: &Path) -> Result<bool> {
     use std::io::{Read, Seek, SeekFrom};
+    // Request blobs can be large; read enough to reach the last real message.
+    const TAIL: u64 = 512 * 1024;
     let mut f = std::fs::File::open(path)?;
     let len = f.metadata()?.len();
-    let start = len.saturating_sub(16 * 1024);
-    f.seek(SeekFrom::Start(start))?;
-    let mut buf = String::new();
-    f.take(16 * 1024).read_to_string(&mut buf).ok();
-    let last = buf.lines().rev().find(|l| !l.trim().is_empty()).unwrap_or("");
-    Ok(last.contains("[Request interrupted by user"))
+    f.seek(SeekFrom::Start(len.saturating_sub(TAIL)))?;
+    let mut buf = Vec::new();
+    f.take(TAIL).read_to_end(&mut buf)?;
+    let text = String::from_utf8_lossy(&buf);
+    for line in text.lines().rev() {
+        let Ok(v) = serde_json::from_str::<Value>(line) else { continue };
+        match v.get("type").and_then(Value::as_str) {
+            Some("user") => return Ok(line.contains("[Request interrupted by user")),
+            Some("assistant") => return Ok(false),
+            _ => continue,
+        }
+    }
+    Ok(false)
 }
 
 /// Re-notify (and optionally ping the phone) for sessions left waiting unseen.
@@ -756,7 +869,18 @@ mod tests {
         assert!(transcript_ends_interrupted(&p).unwrap());
         std::fs::write(&p, "{\"type\":\"user\",\"text\":\"[Request interrupted by user]\"}\n{\"type\":\"assistant\"}\n").unwrap();
         assert!(!transcript_ends_interrupted(&p).unwrap());
+        // Bookkeeping records after the marker don't hide it.
+        std::fs::write(&p, "{\"type\":\"assistant\"}\n{\"type\":\"user\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"[Request interrupted by user]\"}]}}\n{\"type\":\"last-prompt\"}\n{\"type\":\"mode\"}\nnot json\n{\"type\":\"bridge-session\"}\n").unwrap();
+        assert!(transcript_ends_interrupted(&p).unwrap());
         std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn reads_claude_busy_footer() {
+        let busy = "● Writing\n\n✻ Thinking… (12s)\n────\n❯ \n────\n  ⏵⏵ auto mode on (shift+tab to cycle) · esc to interrupt\n";
+        let idle = "● Done\n────\n❯ test\n────\n  ⏵⏵ auto mode on (shift+tab to cycle)\n";
+        assert!(screen_shows_busy(busy));
+        assert!(!screen_shows_busy(idle));
     }
 
     #[test]
