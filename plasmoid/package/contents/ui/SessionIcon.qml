@@ -29,7 +29,9 @@ PlasmaCore.ToolTipArea {
         && (status === "needs_you" || status === "your_turn") && !seen && waited >= 60000
     readonly property bool isFocused: deckRoot.focusedSid === session.sid
 
-    implicitWidth: critter.width + (showTime ? timeLabel.implicitWidth + 3 : 0) + 2
+    /// The light sits clear of the critter: a gap of about three sprite pixels after its body.
+    readonly property real lightCenterX: critter.x + critter.bodyRight + item.px * 3 + light.size / 2
+    implicitWidth: lightCenterX + light.size / 2 + (showTime ? timeLabel.implicitWidth + 4 : 0) + 2
     implicitHeight: critter.height
 
     mainItem: HoverCard {
@@ -71,7 +73,7 @@ PlasmaCore.ToolTipArea {
     StatusDot {
         id: light
         size: Math.max(6, Math.round(item.px * 3.4))
-        x: critter.x + 14.3 * item.px - width / 2
+        x: item.lightCenterX - width / 2
         y: critter.y + critter.bodyCenterY - height / 2
         status: item.status
         seen: item.seen
@@ -120,7 +122,7 @@ PlasmaCore.ToolTipArea {
     PlasmaComponents3.Label {
         id: timeLabel
         visible: item.showTime
-        x: critter.x + critter.width + 2
+        x: item.lightCenterX + light.size / 2 + 4
         anchors.verticalCenter: light.verticalCenter
         text: item.deckRoot.elapsed(item.session.since)
         color: item.tint
