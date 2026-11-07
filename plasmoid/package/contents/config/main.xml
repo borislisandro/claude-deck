@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kcfg xmlns="http://www.kde.org/standards/kcfg/1.0"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="http://www.kde.org/standards/kcfg/1.0 http://www.kde.org/standards/kcfg/1.0/kcfg.xsd">
+  <kcfgfile name=""/>
+  <group name="General">
+    <entry name="binaryPath" type="String">
+      <label>Path to the claude-deck binary (empty: ~/.local/bin/claude-deck)</label>
+      <default></default>
+    </entry>
+    <entry name="collapseAfter" type="Int">
+      <label>Show per-state counts instead of one icon per session above this many sessions</label>
+      <default>5</default>
+    </entry>
+    <entry name="showElapsed" type="Bool">
+      <label>Show how long a session has been waiting</label>
+      <default>true</default>
+    </entry>
+    <entry name="spinWhileWorking" type="Bool">
+      <label>Rotate the spark while Claude works</label>
+      <default>true</default>
+    </entry>
+    <entry name="claudeColoredGlyph" type="Bool">
+      <label>Claude-orange spark (otherwise the panel text color)</label>
+      <default>true</default>
+    </entry>
+    <entry name="ownBackground" type="Bool">
+      <label>Draw the island background (turn off to let Panel Colorizer style it)</label>
+      <default>true</default>
+    </entry>
+    <entry name="peekOnHover" type="Bool">
+      <label>Hovering a session shows its pane</label>
+      <default>true</default>
+    </entry>
+    <entry name="expandOnReturn" type="Bool">
+      <label>Open the popup when you leave a fullscreen app and sessions are waiting</label>
+      <default>true</default>
+    </entry>
+    <entry name="showThumbnail" type="Bool">
+      <label>Live thumbnail of the deck window in the popup</label>
+      <default>true</default>
+    </entry>
+    <entry name="colorWorking" type="String"><default>#5fbf7a</default></entry>
+    <entry name="colorNeedsYou" type="String"><default>#f5a524</default></entry>
+    <entry name="colorYourTurn" type="String"><default>#ff5a6a</default></entry>
+    <entry name="colorExited" type="String"><default>#8a7a7c</default></entry>
+  </group>
+</kcfg>

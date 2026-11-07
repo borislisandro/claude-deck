@@ -1,0 +1,19 @@
+{
+    "KPackageStructure": "Plasma/Applet",
+    "KPlugin": {
+        "Authors": [
+            {
+                "Name": "Boris Lisandro"
+            }
+        ],
+        "Category": "System Information",
+        "Description": "Live status of your Claude Code deck sessions, right on the panel",
+        "Icon": "utilities-terminal",
+        "Id": "com.borislisandro.claudedeck",
+        "License": "MIT",
+        "Name": "Claude Deck",
+        "Version": "0.1.0",
+        "Website": "https://github.com/borislisandro/claude-deck"
+    },
+    "X-Plasma-API-Minimum-Version": "6.0"
+}

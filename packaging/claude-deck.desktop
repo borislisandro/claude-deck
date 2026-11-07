@@ -1,0 +1,35 @@
+[Desktop Entry]
+Type=Application
+Name=Claude Deck
+GenericName=Claude Code Deck
+Comment=Claude Code sessions in one deck, with a live status island on the panel
+Exec=@BIN@ toggle
+Icon=claude-deck
+Terminal=false
+Categories=Development;Utility;TerminalEmulator;
+Keywords=claude;ai;terminal;kitty;
+StartupWMClass=claude-deck
+StartupNotify=false
+Actions=NextWaiting;NewSession;Restore;Quit;
+X-KDE-Shortcuts=Meta+C
+
+[Desktop Action NextWaiting]
+Name=Jump to the Session Waiting Longest
+Icon=go-jump
+Exec=@BIN@ next-waiting --raise
+X-KDE-Shortcuts=Meta+Shift+C
+
+[Desktop Action NewSession]
+Name=New Session
+Icon=list-add
+Exec=@BIN@ new --pick
+
+[Desktop Action Restore]
+Name=Restore Last Workspace
+Icon=document-revert
+Exec=@BIN@ restore
+
+[Desktop Action Quit]
+Name=Quit Claude Deck
+Icon=application-exit
+Exec=@BIN@ quit
