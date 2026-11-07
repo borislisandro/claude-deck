@@ -71,7 +71,7 @@ Rectangle {
                 waited: card.deckRoot.now - card.session.since
             }
             PlasmaComponents3.Label {
-                text: card.session.index
+                text: card.session.tab_index ? i18n("Tab %1", card.session.tab_index) : card.session.index
                 opacity: 0.5
                 font.weight: Font.DemiBold
             }
@@ -81,19 +81,13 @@ Rectangle {
                 elide: Text.ElideRight
                 Layout.fillWidth: true
             }
-            Rectangle {
-                visible: !!card.session.branch
-                radius: height / 2
-                color: Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.08)
-                implicitWidth: branchLabel.implicitWidth + Kirigami.Units.largeSpacing
-                implicitHeight: branchLabel.implicitHeight + 2
-                PlasmaComponents3.Label {
-                    id: branchLabel
-                    anchors.centerIn: parent
-                    text: "⎇ " + (card.session.branch || "")
-                    font: Kirigami.Theme.smallFont
-                    opacity: 0.8
-                }
+            Chip {
+                text: card.session.branch ? "⎇ " + card.session.branch : ""
+            }
+            Chip {
+                text: card.session.model || ""
+                tint: "#d97757"
+                strength: 0.16
             }
             PlasmaComponents3.Label {
                 text: card.deckRoot.statusLabel(card.session.status)
@@ -170,16 +164,10 @@ Rectangle {
                 onClicked: card.deckRoot.run("ack " + card.deckRoot.shellQuote(card.session.sid))
             }
             Item { Layout.fillWidth: true }
-            PlasmaComponents3.ToolButton {
-                icon.name: "window-close-symbolic"
-                display: PlasmaComponents3.AbstractButton.IconOnly
-                text: i18n("Close session")
-                PlasmaComponents3.ToolTip.text: text
-                PlasmaComponents3.ToolTip.visible: hovered
-                onClicked: {
-                    card.deckRoot.run("activate " + card.deckRoot.shellQuote(card.session.sid))
-                    card.deckRoot.run("close " + card.deckRoot.shellQuote(card.session.sid))
-                }
+            ConfirmButton {
+                tip: i18n("Close this session")
+                needsConfirm: card.session.status === "working" || card.session.status === "needs_you"
+                onConfirmed: card.deckRoot.closeSession(card.session.sid)
             }
         }
     }

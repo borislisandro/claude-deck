@@ -136,6 +136,11 @@ pub async fn run(cwd: Option<PathBuf>, demo: bool, adopt_kitty: Option<u32>) -> 
             shutdown();
         });
         changed(&sh, vec![]);
+        let sids: Vec<String> = sh.store.lock().unwrap().sessions.iter().map(|s| s.sid.clone()).collect();
+        for sid in sids {
+            spawn_model_refresh(&sh, &sid);
+        }
+        spawn_tab_refresh(&sh);
         tokio::spawn(sync_loop(sh.clone()));
         tokio::spawn(interrupt_loop(sh.clone()));
     } else {
@@ -283,7 +288,7 @@ fn write_state_file(sh: &Sh) {
         .iter()
         .filter_map(|s| {
             s.kitty_window.map(|w| {
-                (w.to_string(), json!({ "status": s.status, "seen": s.seen, "since": s.since, "index": s.index, "project": s.project }))
+                (w.to_string(), json!({ "status": s.status, "seen": s.seen, "since": s.since, "index": s.index, "project": s.project, "model": s.model }))
             })
         })
         .collect();
@@ -378,6 +383,10 @@ async fn handle(sh: &Sh, req: Request) -> Result<Value> {
             if matches!(event.as_str(), "SessionStart" | "Stop" | "UserPromptSubmit") {
                 refresh_branch(sh, &sid);
             }
+            // Each reply records its model; that also catches a /model switch.
+            if matches!(event.as_str(), "Stop" | "StopFailure" | "SessionStart") {
+                spawn_model_refresh(sh, &sid);
+            }
             changed(sh, t.into_iter().collect());
             Ok(json!({ "ok": true }))
         }
@@ -385,6 +394,7 @@ async fn handle(sh: &Sh, req: Request) -> Result<Value> {
             sh.store.lock().unwrap().register(&sid, kitty_window, &cwd, now);
             refresh_branch(sh, &sid);
             changed(sh, vec![]);
+            spawn_tab_refresh(sh);
             Ok(json!({ "ok": true, "settings": paths::hook_settings() }))
         }
         Request::Exited { sid, code } => {
@@ -422,6 +432,8 @@ async fn handle(sh: &Sh, req: Request) -> Result<Value> {
             if sh.store.lock().unwrap().set_order(windows) {
                 changed(sh, vec![]);
             }
+            // Something moved in kitty; find out which tab each pane is in now.
+            spawn_tab_refresh(sh);
             Ok(json!({ "ok": true }))
         }
         Request::State => Ok(state_json(sh)),
@@ -510,13 +522,17 @@ async fn handle(sh: &Sh, req: Request) -> Result<Value> {
             kitty::kitten(&args).await?;
             Ok(json!({ "ok": true }))
         }
-        Request::Close { sid } => {
+        Request::Close { sid, force } => {
             let (win, status) = {
                 let st = sh.store.lock().unwrap();
                 let s = st.get(&sid).context("no such session")?;
                 (s.kitty_window.context("session has no pane")?, s.status)
             };
-            close_window(win, status).await
+            close_window(win, if force { Status::Exited } else { status }).await
+        }
+        Request::CloseTab { tab } => {
+            kitty::rc(&["close-tab", &format!("--match=id:{tab}")]).await?;
+            Ok(json!({ "ok": true }))
         }
         Request::CloseWindow { kitty_window } => {
             let status = sh.store.lock().unwrap().by_window(kitty_window).map(|s| s.status).unwrap_or(Status::Exited);
@@ -612,8 +628,115 @@ fn save_workspace(sh: &Sh) {
     }
 }
 
-/// kitty window id -> tab id, refreshed by the sync loop.
+/// kitty window id -> tab id, as last read from kitty.
 static LAYOUT: Mutex<Option<HashMap<u64, u64>>> = Mutex::new(None);
+
+/// Ask kitty which tab every pane is in, and group the sessions accordingly.
+async fn refresh_tabs(sh: &Sh) {
+    let Ok(out) = kitty::kitten(&["layout"]).await else { return };
+    let Ok(v) = serde_json::from_str::<HashMap<String, Value>>(&out) else { return };
+    let map: HashMap<u64, u64> = v
+        .iter()
+        .filter_map(|(w, info)| Some((w.parse().ok()?, info.get("tab")?.as_u64()?)))
+        .collect();
+    let did = sh.store.lock().unwrap().set_tabs(&map);
+    *LAYOUT.lock().unwrap() = Some(map);
+    if did {
+        changed(sh, vec![]);
+    }
+}
+
+/// Coalesces bursts of order changes into one tab refresh.
+static TAB_REFRESH_PENDING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+fn spawn_tab_refresh(sh: &Sh) {
+    if TAB_REFRESH_PENDING.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        return;
+    }
+    let sh = sh.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(150)).await;
+        TAB_REFRESH_PENDING.store(false, std::sync::atomic::Ordering::SeqCst);
+        refresh_tabs(&sh).await;
+    });
+}
+
+/// Find the session's model: its transcript's latest reply, or, for a session that
+/// hasn't replied yet, the "Sonnet 5.5 with high effort" line of Claude's banner.
+fn spawn_model_refresh(sh: &Sh, sid: &str) {
+    let (path, win) = {
+        let st = sh.store.lock().unwrap();
+        let Some(s) = st.get(sid) else { return };
+        (s.transcript_path.clone(), s.kitty_window)
+    };
+    let sh = sh.clone();
+    let sid = sid.to_string();
+    tokio::spawn(async move {
+        let mut model = None;
+        if let Some(path) = path {
+            model = tokio::task::spawn_blocking(move || transcript_last_model(Path::new(&path)).ok().flatten()).await.ok().flatten();
+        }
+        if model.is_none() {
+            if let Some(win) = win {
+                if let Ok(text) = kitty::rc(&["get-text", &format!("--match=id:{win}"), "--extent=all"]).await {
+                    model = banner_model(&text);
+                }
+            }
+        }
+        if let Some(model) = model {
+            if sh.store.lock().unwrap().set_model(&sid, &model) {
+                changed(&sh, vec![]);
+            }
+        }
+    });
+}
+
+/// "Sonnet 5.5 with high effort · Claude Pro" (Claude's startup banner) -> "Sonnet 5.5".
+pub fn banner_model(screen: &str) -> Option<String> {
+    for line in screen.lines().take(40) {
+        let words: Vec<&str> = line.split_whitespace().collect();
+        for (i, w) in words.iter().enumerate() {
+            let family = w.trim_matches(|c: char| !c.is_alphanumeric());
+            if matches!(family, "Opus" | "Sonnet" | "Haiku" | "Fable") {
+                if let Some(v) = words.get(i + 1) {
+                    let v = v.trim_end_matches(|c: char| !c.is_ascii_digit());
+                    if !v.is_empty() && v.chars().all(|c| c.is_ascii_digit() || c == '.') {
+                        return Some(format!("{family} {v}"));
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+/// The model of the latest real reply in a transcript (Claude's own canned
+/// messages say "<synthetic>" and are skipped).
+pub fn transcript_last_model(path: &Path) -> Result<Option<String>> {
+    use std::io::{Read, Seek, SeekFrom};
+    const TAIL: u64 = 1024 * 1024;
+    let mut f = std::fs::File::open(path)?;
+    let len = f.metadata()?.len();
+    f.seek(SeekFrom::Start(len.saturating_sub(TAIL)))?;
+    let mut buf = Vec::new();
+    f.take(TAIL).read_to_end(&mut buf)?;
+    let text = String::from_utf8_lossy(&buf);
+    for line in text.lines().rev() {
+        if !line.contains("\"assistant\"") {
+            continue;
+        }
+        let Ok(v) = serde_json::from_str::<Value>(line) else { continue };
+        if v.get("type").and_then(Value::as_str) != Some("assistant") {
+            continue;
+        }
+        if let Some(m) = v.pointer("/message/model").and_then(Value::as_str) {
+            if !m.starts_with('<') {
+                return Ok(Some(m.to_string()));
+            }
+        }
+    }
+    Ok(None)
+}
 
 /// Mirrors the store into kitty: tab tint per status and the
 /// saved workspace. Runs serially so kitty never gets a burst of commands.
@@ -648,15 +771,7 @@ async fn sync_loop(sh: Sh) {
             }
         }
         if sessions != last_sessions {
-            if let Ok(out) = kitty::kitten(&["layout"]).await {
-                if let Ok(v) = serde_json::from_str::<HashMap<String, Value>>(&out) {
-                    let map: HashMap<u64, u64> = v
-                        .iter()
-                        .filter_map(|(w, info)| Some((w.parse().ok()?, info.get("tab")?.as_u64()?)))
-                        .collect();
-                    *LAYOUT.lock().unwrap() = Some(map);
-                }
-            }
+            refresh_tabs(&sh).await;
             last_sessions = sessions;
             // A pane closing may be the whole deck quitting; wait to be sure before
             // dropping it from the saved workspace.
@@ -873,6 +988,31 @@ mod tests {
         std::fs::write(&p, "{\"type\":\"assistant\"}\n{\"type\":\"user\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"[Request interrupted by user]\"}]}}\n{\"type\":\"last-prompt\"}\n{\"type\":\"mode\"}\nnot json\n{\"type\":\"bridge-session\"}\n").unwrap();
         assert!(transcript_ends_interrupted(&p).unwrap());
         std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn reads_the_last_real_model() {
+        let dir = std::env::temp_dir().join(format!("claude-deck-model-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("t.jsonl");
+        std::fs::write(&p, concat!(
+            "{\"type\":\"assistant\",\"message\":{\"model\":\"claude-opus-5-5\"}}\n",
+            "{\"type\":\"assistant\",\"message\":{\"model\":\"claude-sonnet-5-5\"}}\n",
+            "{\"type\":\"assistant\",\"message\":{\"model\":\"<synthetic>\"}}\n",
+            "{\"type\":\"last-prompt\"}\n",
+        )).unwrap();
+        assert_eq!(transcript_last_model(&p).unwrap().as_deref(), Some("claude-sonnet-5-5"));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn reads_the_model_from_the_banner() {
+        let screen = " ▐▛███▜▌   Claude Code v2.1.319\n▝▜█████▛▘  Sonnet 5.5 with high effort · Claude Pro\n  ▘▘ ▝▝    ~/x\n";
+        assert_eq!(banner_model(screen).as_deref(), Some("Sonnet 5.5"));
+        assert_eq!(banner_model("Opus 5 · Claude Max").as_deref(), Some("Opus 5"));
+        assert_eq!(banner_model("nothing here").as_deref(), None);
+        // Prose mentioning a model without a version is not the banner.
+        assert_eq!(banner_model("I like Sonnet poems").as_deref(), None);
     }
 
     #[test]

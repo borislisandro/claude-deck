@@ -1,5 +1,7 @@
 /*
- * The island: a pill on the panel with one spark + light per session.
+ * The island: a critter + light per session. With more sessions than
+ * "collapseAfter", one critter per deck tab (its most urgent session, with a
+ * count); with more tabs than that too, a count per state.
  * Zero width while the deck isn't running.
  */
 import QtQuick
@@ -15,7 +17,11 @@ Item {
 
     readonly property bool running: deckRoot.running
     readonly property var sessions: deckRoot.sessions
-    readonly property bool collapsed: sessions.length > Plasmoid.configuration.collapseAfter
+    readonly property var groups: deckRoot.groups
+    /// "sessions" | "tabs" | "counts"
+    readonly property string mode: sessions.length <= Plasmoid.configuration.collapseAfter ? "sessions"
+        : groups.length <= Plasmoid.configuration.collapseAfter ? "tabs" : "counts"
+    readonly property bool collapsed: mode === "counts"
     /// Critter pixel size: whole pixels, as large as the pill allows.
     readonly property int px: Math.max(2, Math.floor(height * 0.84 / 11))
     readonly property real glyph: px * 8
@@ -104,10 +110,24 @@ Item {
             }
 
             Repeater {
-                model: compact.collapsed ? [] : compact.sessions
+                model: compact.mode === "sessions" ? compact.sessions : []
                 delegate: SessionIcon {
                     required property var modelData
                     session: modelData
+                    deckRoot: compact.deckRoot
+                    px: compact.px
+                    Layout.alignment: Qt.AlignVCenter
+                }
+            }
+
+            // One critter per tab: the tab's most urgent session, and how many it holds.
+            Repeater {
+                model: compact.mode === "tabs" ? compact.groups : []
+                delegate: SessionIcon {
+                    required property var modelData
+                    session: modelData.top
+                    groupSessions: modelData.sessions
+                    tabIndex: modelData.tabIndex
                     deckRoot: compact.deckRoot
                     px: compact.px
                     Layout.alignment: Qt.AlignVCenter

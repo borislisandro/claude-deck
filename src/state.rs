@@ -60,6 +60,17 @@ pub struct Session {
     /// When the last hook event arrived, in unix milliseconds.
     #[serde(default)]
     pub last_event: u64,
+    /// The model Claude is answering with, as Claude names it ("claude-sonnet-5-5").
+    #[serde(default)]
+    pub model_id: Option<String>,
+    /// The same, for people ("Sonnet 5.5").
+    #[serde(default)]
+    pub model: Option<String>,
+    /// The kitty tab holding this session's pane, and that tab's 1-based position.
+    #[serde(default)]
+    pub tab: Option<u64>,
+    #[serde(default)]
+    pub tab_index: Option<u32>,
 }
 
 /// A status change the daemon may want to announce (notification, sound, phone).
@@ -99,6 +110,32 @@ pub fn project_name(cwd: &str) -> String {
 fn first_line(s: &str, max: usize) -> String {
     let line = s.lines().map(str::trim).find(|l| !l.is_empty()).unwrap_or("");
     truncate(line, max)
+}
+
+/// "claude-sonnet-5-5" -> "Sonnet 5.5", "claude-opus-4-1-20250805" -> "Opus 4.1",
+/// "claude-3-5-sonnet-20241022" -> "Sonnet 3.5", "claude-fable-5-1[1m]" -> "Fable 5.1 (1M)".
+/// Anything unrecognised is shown as Claude reported it.
+pub fn friendly_model(id: &str) -> String {
+    let lower = id.trim().to_lowercase();
+    let (base, ctx) = match lower.find('[') {
+        Some(i) => (&lower[..i], Some(lower[i..].trim_matches(|c| c == '[' || c == ']').to_uppercase())),
+        None => (lower.as_str(), None),
+    };
+    let parts: Vec<&str> = base.split(['-', '_', '.', ' ']).filter(|p| !p.is_empty()).collect();
+    let Some(family) = parts.iter().find(|p| matches!(**p, "opus" | "sonnet" | "haiku" | "fable")) else {
+        return id.trim().to_string();
+    };
+    // Version parts are short numbers; 8-digit dates are not.
+    let nums: Vec<&str> = parts.iter().filter(|p| p.len() <= 2 && p.chars().all(|c| c.is_ascii_digit())).copied().collect();
+    let mut name = format!("{}{}", family[..1].to_uppercase(), &family[1..]);
+    if !nums.is_empty() {
+        name.push(' ');
+        name.push_str(&nums.join("."));
+    }
+    if let Some(c) = ctx.filter(|c| !c.is_empty()) {
+        name.push_str(&format!(" ({c})"));
+    }
+    name
 }
 
 pub fn truncate(s: &str, max: usize) -> String {
@@ -205,6 +242,10 @@ impl Store {
             created: now,
             reminded: false,
             last_event: now,
+            model_id: None,
+            model: None,
+            tab: None,
+            tab_index: None,
         });
         self.renumber();
     }
@@ -220,6 +261,49 @@ impl Store {
             s.index = i as u32 + 1;
         }
         self.next_index = self.sessions.len() as u32;
+    }
+
+    /// Record the model a session is using. True if it changed.
+    pub fn set_model(&mut self, sid: &str, id: &str) -> bool {
+        let id = id.trim();
+        // Claude labels its own canned messages (errors, interrupts) "<synthetic>".
+        if id.is_empty() || id.starts_with('<') {
+            return false;
+        }
+        let Some(s) = self.get_mut(sid) else { return false };
+        if s.model_id.as_deref() == Some(id) {
+            return false;
+        }
+        s.model_id = Some(id.to_string());
+        s.model = Some(friendly_model(id));
+        self.rev += 1;
+        true
+    }
+
+    /// Which kitty tab each pane is in (window id -> tab id). Tabs are numbered in
+    /// on-screen order, which the sessions are already sorted by. True if it changed.
+    pub fn set_tabs(&mut self, tabs: &std::collections::HashMap<u64, u64>) -> bool {
+        let mut seen: Vec<u64> = vec![];
+        let mut changed = false;
+        for s in self.sessions.iter_mut() {
+            let tab = s.kitty_window.and_then(|w| tabs.get(&w).copied());
+            let tab_index = tab.map(|t| match seen.iter().position(|x| *x == t) {
+                Some(i) => i as u32 + 1,
+                None => {
+                    seen.push(t);
+                    seen.len() as u32
+                }
+            });
+            if s.tab != tab || s.tab_index != tab_index {
+                s.tab = tab;
+                s.tab_index = tab_index;
+                changed = true;
+            }
+        }
+        if changed {
+            self.rev += 1;
+        }
+        changed
     }
 
     /// Take over sessions from a previous daemon (`claude-deck upgrade`).
@@ -302,6 +386,14 @@ impl Store {
         };
         match event {
             "SessionStart" => {
+                let model = match p.get("model") {
+                    Some(Value::String(m)) => Some(m.clone()),
+                    Some(Value::Object(o)) => o.get("id").or(o.get("display_name")).and_then(Value::as_str).map(String::from),
+                    _ => None,
+                };
+                if let Some(m) = model {
+                    self.set_model(sid, &m);
+                }
                 let source = p.get("source").and_then(Value::as_str).unwrap_or("startup");
                 // Auto-compaction restarts the session mid-turn; work continues.
                 if source == "compact" {
@@ -735,6 +827,41 @@ mod tests {
         // A new pane not yet reported goes last.
         st.register("d", Some(4), "/p/d", 4);
         assert_eq!(st.get("d").unwrap().index, 4);
+    }
+
+    #[test]
+    fn names_models_for_people() {
+        assert_eq!(friendly_model("claude-sonnet-5-5"), "Sonnet 5.5");
+        assert_eq!(friendly_model("claude-opus-4-1-20250805"), "Opus 4.1");
+        assert_eq!(friendly_model("claude-3-5-sonnet-20241022"), "Sonnet 3.5");
+        assert_eq!(friendly_model("claude-fable-5-1[1m]"), "Fable 5.1 (1M)");
+        assert_eq!(friendly_model("claude-haiku-5-5"), "Haiku 5.5");
+        assert_eq!(friendly_model("some-other-model"), "some-other-model");
+    }
+
+    #[test]
+    fn tracks_models_from_hooks_and_ignores_synthetic() {
+        let mut st = store_with_session();
+        st.apply_hook("s1", Some(7), &hook("SessionStart", json!({"source": "startup", "model": "claude-opus-5-5"})), 10);
+        assert_eq!(st.get("s1").unwrap().model.as_deref(), Some("Opus 5.5"));
+        assert!(!st.set_model("s1", "<synthetic>"));
+        assert!(st.set_model("s1", "claude-sonnet-5-5"));
+        assert_eq!(st.get("s1").unwrap().model.as_deref(), Some("Sonnet 5.5"));
+        assert!(!st.set_model("s1", "claude-sonnet-5-5"));
+    }
+
+    #[test]
+    fn numbers_tabs_in_screen_order() {
+        let mut st = Store::default();
+        st.register("a", Some(1), "/p/a", 1);
+        st.register("b", Some(2), "/p/b", 2);
+        st.register("c", Some(3), "/p/c", 3);
+        st.set_order(vec![2, 3, 1]);
+        let tabs = std::collections::HashMap::from([(1, 50), (2, 70), (3, 70)]);
+        assert!(st.set_tabs(&tabs));
+        let got: Vec<(&str, Option<u32>)> = st.sessions.iter().map(|s| (s.sid.as_str(), s.tab_index)).collect();
+        assert_eq!(got, vec![("b", Some(1)), ("c", Some(1)), ("a", Some(2))]);
+        assert!(!st.set_tabs(&tabs));
     }
 
     #[test]

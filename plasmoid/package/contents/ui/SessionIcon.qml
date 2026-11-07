@@ -16,6 +16,10 @@ PlasmaCore.ToolTipArea {
     required property var deckRoot
     /// Critter pixel size, chosen by the island from the panel height.
     property int px: 2
+    /// When this icon stands for a whole deck tab: every session in it.
+    property var groupSessions: []
+    property int tabIndex: 0
+    readonly property int count: groupSessions.length
 
     readonly property string status: session.status
     readonly property bool seen: session.seen
@@ -30,6 +34,8 @@ PlasmaCore.ToolTipArea {
 
     mainItem: HoverCard {
         session: item.session
+        groupSessions: item.groupSessions
+        tabIndex: item.tabIndex
         deckRoot: item.deckRoot
     }
     location: Plasmoid.location
@@ -72,6 +78,27 @@ PlasmaCore.ToolTipArea {
         color: item.tint
         waited: item.waited
         Behavior on y { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+    }
+
+    // How many sessions this tab holds.
+    Rectangle {
+        visible: item.count > 1
+        x: critter.x + critter.px * 6.5 - width / 2
+        y: critter.y + critter.height - height + 1
+        height: Math.max(9, item.px * 4.5)
+        width: Math.max(height, countLabel.implicitWidth + 4)
+        radius: height / 2
+        color: Kirigami.Theme.backgroundColor
+        border.width: 1
+        border.color: item.tint
+        PlasmaComponents3.Label {
+            id: countLabel
+            anchors.centerIn: parent
+            text: item.count
+            font.pixelSize: Math.max(7, parent.height - 3)
+            font.weight: Font.Bold
+            color: Kirigami.Theme.textColor
+        }
     }
 
     // A small "!" when the turn ended on an API error.

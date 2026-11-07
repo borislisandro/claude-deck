@@ -12,7 +12,7 @@ use crate::state::truncate;
 
 const KEEP: &[&str] = &[
     "hook_event_name", "session_id", "transcript_path", "cwd", "source", "reason",
-    "tool_name", "notification_type", "message", "error", "trigger",
+    "tool_name", "notification_type", "message", "error", "trigger", "model",
 ];
 const KEEP_INPUT: &[&str] = &["file_path", "notebook_path", "command", "description", "pattern", "query", "url"];
 

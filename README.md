@@ -40,8 +40,16 @@ The island only exists while the deck runs. Hover a session to peek at its pane,
   The deck window is also highlighted, the same effect the task manager uses on hover.
 - **Click:** focuses that session's pane and raises the deck. Clicking the session you're already
   in hides the deck. **Middle click:** new session. **Scroll:** switch session.
-  **Click the pill:** popup with a live thumbnail of the deck and a card per session
-  (Open · Interrupt · Mark seen · Close).
+  **Click the pill:** popup with a live thumbnail of the deck and your sessions grouped the way
+  the deck has them. A tab with one session gets a full card. A tab with several gets a header
+  (state counts, shared model, Open / Close tab / fold) and one line per session. Close buttons
+  ask inline ("Close?") when Claude is busy, and the popup stays open so you can close several
+  in a row.
+- **Models:** every session shows the model it's on ("Sonnet 5.5"), read from Claude's hooks and
+  its latest reply, so `/model` switches show up. Kitty tab titles show it too, when every session
+  in the tab uses the same model.
+- **Many sessions:** above 5 sessions the island shows one critter per tab (its most urgent
+  session, with a count badge); above 5 tabs, one count per state.
 - **Never miss one:**
   - A notification fires when a session turns yellow or red while you're not looking; it has an
     Open action.

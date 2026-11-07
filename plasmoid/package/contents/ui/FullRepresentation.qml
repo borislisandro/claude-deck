@@ -1,5 +1,7 @@
 /*
- * The popup: a live thumbnail of the deck, then a card per session.
+ * The popup: a live thumbnail of the deck, then the sessions grouped the way the
+ * deck has them: a card per tab (one session: the full card; several: a header
+ * and a line per session).
  */
 import QtQuick
 import QtQuick.Layouts
@@ -17,10 +19,10 @@ PlasmaExtras.Representation {
 
     Layout.minimumWidth: Kirigami.Units.gridUnit * 26
     Layout.preferredWidth: Kirigami.Units.gridUnit * 30
-    Layout.minimumHeight: Kirigami.Units.gridUnit * 14
-    // Plasma sizes the popup before its content exists, so size it from the session count.
-    Layout.preferredHeight: Kirigami.Units.gridUnit * Math.min(46,
-        6 + (Plasmoid.configuration.showThumbnail ? 11 : 0) + 12 * Math.max(1, full.deckRoot.sessions.length))
+    // Plasma opens popups at their minimum size, so the minimum carries the real height.
+    Layout.minimumHeight: Kirigami.Units.gridUnit * full.deckRoot.popupUnits
+    // Plasma sizes the popup before its content exists, so size it from what it will show.
+    Layout.preferredHeight: Kirigami.Units.gridUnit * full.deckRoot.popupUnits
     collapseMarginsHint: true
 
     header: PlasmaExtras.PlasmoidHeading {
@@ -112,12 +114,26 @@ PlasmaExtras.Representation {
             }
 
             Repeater {
-                model: full.deckRoot.sessions
-                delegate: SessionCard {
+                model: full.deckRoot.groups
+                delegate: Loader {
+                    id: groupLoader
                     required property var modelData
-                    session: modelData
-                    deckRoot: full.deckRoot
                     Layout.fillWidth: true
+                    sourceComponent: modelData.sessions.length === 1 ? singleCard : groupCard
+                    Component {
+                        id: singleCard
+                        SessionCard {
+                            session: groupLoader.modelData.sessions[0]
+                            deckRoot: full.deckRoot
+                        }
+                    }
+                    Component {
+                        id: groupCard
+                        GroupCard {
+                            group: groupLoader.modelData
+                            deckRoot: full.deckRoot
+                        }
+                    }
                 }
             }
 

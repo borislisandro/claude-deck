@@ -21,6 +21,59 @@ PlasmoidItem {
     readonly property int unseen: deck.unseen || 0
     readonly property string focusedSid: deck.focused_sid || ""
     property real now: Date.now()
+
+    /// Sessions grouped by deck tab, in on-screen order. Each group:
+    /// { key, tab, tabIndex, sessions, top (most urgent), counts, model, projects }
+    readonly property var groups: {
+        const out = []
+        const byKey = {}
+        for (const s of sessions) {
+            const key = (s.tab !== null && s.tab !== undefined) ? "t" + s.tab : "s" + s.sid
+            let g = byKey[key]
+            if (!g) {
+                g = { key: key, tab: s.tab, tabIndex: s.tab_index || (out.length + 1), sessions: [] }
+                byKey[key] = g
+                out.push(g)
+            }
+            g.sessions.push(s)
+        }
+        for (const g of out) {
+            g.top = g.sessions.slice().sort((a, b) => urgency(a) - urgency(b) || a.since - b.since)[0]
+            g.counts = { working: 0, needs_you: 0, your_turn: 0, exited: 0 }
+            for (const s of g.sessions) g.counts[s.status] = (g.counts[s.status] || 0) + 1
+            const models = [...new Set(g.sessions.map(s => s.model || ""))]
+            // A model for the whole tab only makes sense when every session agrees.
+            g.model = models.length === 1 ? models[0] : ""
+            g.projects = [...new Set(g.sessions.map(s => s.project))]
+            g.unseen = g.sessions.filter(s => !s.seen).length
+        }
+        return out
+    }
+
+    /// Lower is more urgent: what the island and groups show first.
+    function urgency(s) {
+        if (s.status === "needs_you") return s.seen ? 1 : 0
+        if (s.status === "your_turn") return s.seen ? 4 : 2
+        if (s.status === "working") return 3
+        return 5
+    }
+
+    /// Tabs whose session list is folded in the popup (by group key).
+    property var foldedGroups: ({})
+    function toggleFold(key) {
+        const f = Object.assign({}, foldedGroups)
+        f[key] = !f[key]
+        foldedGroups = f
+    }
+
+    /// Popup height in grid units, from what it will show.
+    readonly property real popupUnits: {
+        let u = 6 + (Plasmoid.configuration.showThumbnail ? 11 : 0)
+        for (const g of groups) {
+            u += g.sessions.length === 1 ? 11 : 3.5 + (foldedGroups[g.key] ? 0 : 2.3 * g.sessions.length)
+        }
+        return Math.min(46, Math.max(14, u))
+    }
     /// sid -> last lines of its pane, fetched while hovering or while the popup is open.
     property var tails: ({})
 
@@ -194,6 +247,27 @@ PlasmoidItem {
             run("toggle")   // clicking the session you're in hides the deck
         } else {
             run("activate " + shellQuote(sid))
+        }
+    }
+
+    /// Close one session's pane without raising the deck (the popup stays open).
+    /// The popup asks first when Claude is busy, so kitty doesn't have to.
+    function closeSession(sid) {
+        if (peekedSid === sid) {
+            unpeekTimer.stop()
+            peekedSid = ""
+        }
+        run("close " + shellQuote(sid) + " --force")
+    }
+
+    /// Close a whole deck tab and every session in it.
+    function closeGroup(group) {
+        unpeekTimer.stop()
+        peekedSid = ""
+        if (group.tab !== null && group.tab !== undefined) {
+            run("close-tab " + group.tab)
+        } else {
+            for (const s of group.sessions) run("close " + shellQuote(s.sid) + " --force")
         }
     }
 

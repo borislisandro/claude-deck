@@ -55,8 +55,11 @@ pub enum Request {
     NextWaiting { raise: bool },
     Tile,
     Untile,
-    Close { sid: String },
+    /// `force`: no "Claude is still working" question (the panel already asked).
+    Close { sid: String, #[serde(default)] force: bool },
     CloseWindow { kitty_window: u64 },
+    /// Close a whole kitty tab: every session in it.
+    CloseTab { tab: u64 },
     Interrupt { sid: String },
     Digest,
     Restore,

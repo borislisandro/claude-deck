@@ -1,5 +1,6 @@
 /*
- * The card shown while hovering a session on the island.
+ * The card shown while hovering a session on the island. For a tab critter it
+ * lists every session in the tab; the details below are its most urgent one.
  */
 import QtQuick
 import QtQuick.Layouts
@@ -11,6 +12,9 @@ Item {
 
     property var session
     property var deckRoot
+    property var groupSessions: []
+    property int tabIndex: 0
+    readonly property bool isGroup: groupSessions.length > 1
 
     readonly property color tint: deckRoot.statusColor(session.status, session.seen)
     readonly property string tail: deckRoot.tails[session.sid] || ""
@@ -40,7 +44,8 @@ Item {
                 waited: card.deckRoot.now - card.session.since
             }
             PlasmaComponents3.Label {
-                text: card.session.index + "  " + card.session.project
+                text: card.isGroup ? i18n("Tab %1 · %2 sessions", card.tabIndex, card.groupSessions.length)
+                    : card.session.index + "  " + card.session.project
                 font.bold: true
                 font.pointSize: Kirigami.Theme.defaultFont.pointSize * 1.1
                 elide: Text.ElideRight
@@ -53,9 +58,49 @@ Item {
             }
         }
 
+        // Every session in the tab, one line each.
+        Repeater {
+            model: card.isGroup ? card.groupSessions : []
+            delegate: RowLayout {
+                required property var modelData
+                Layout.fillWidth: true
+                spacing: Kirigami.Units.smallSpacing
+                StatusDot {
+                    size: 6
+                    status: modelData.status
+                    seen: modelData.seen
+                    color: card.deckRoot.statusColor(modelData.status, modelData.seen)
+                }
+                PlasmaComponents3.Label {
+                    text: modelData.index + "  " + modelData.project
+                    elide: Text.ElideRight
+                    Layout.fillWidth: true
+                }
+                PlasmaComponents3.Label {
+                    text: modelData.model || ""
+                    opacity: 0.6
+                    font: Kirigami.Theme.smallFont
+                }
+                PlasmaComponents3.Label {
+                    text: card.deckRoot.statusLabel(modelData.status) + " · " + card.deckRoot.elapsed(modelData.since)
+                    color: card.deckRoot.statusColor(modelData.status, modelData.seen)
+                    font: Kirigami.Theme.smallFont
+                }
+            }
+        }
+
         PlasmaComponents3.Label {
-            visible: !!card.session.branch
-            text: "⎇ " + (card.session.branch || "") + "   " + card.session.cwd.replace(/^\/home\/[^/]+/, "~")
+            visible: card.isGroup
+            text: i18n("Most urgent: %1 %2", card.session.index, card.session.project)
+            opacity: 0.6
+            font: Kirigami.Theme.smallFont
+            Layout.topMargin: Kirigami.Units.smallSpacing
+        }
+
+        PlasmaComponents3.Label {
+            visible: !!card.session.branch || !!card.session.model
+            text: [card.session.model || "", card.session.branch ? "⎇ " + card.session.branch : "",
+                   card.session.cwd.replace(/^\/home\/[^/]+/, "~")].filter(x => x.length > 0).join("   ")
             opacity: 0.65
             elide: Text.ElideMiddle
             Layout.fillWidth: true
@@ -107,7 +152,8 @@ Item {
         }
 
         PlasmaComponents3.Label {
-            text: i18n("Click to open · scroll the island to switch sessions")
+            text: card.isGroup ? i18n("Click to open the most urgent one · click the island for all")
+                : i18n("Click to open · scroll the island to switch sessions")
             opacity: 0.5
             font: Kirigami.Theme.smallFont
         }

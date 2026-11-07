@@ -84,8 +84,14 @@ enum Cmd {
     Tile,
     /// Spread tiled sessions back into their own tabs.
     Untile,
-    /// Close a session's pane (asks first if Claude is working).
-    Close { sid: String },
+    /// Close a session's pane (asks first if Claude is working, unless --force).
+    Close {
+        sid: String,
+        #[arg(long)]
+        force: bool,
+    },
+    /// Close a whole deck tab (kitty tab id, as in `watch` output) and every session in it.
+    CloseTab { tab: u64 },
     #[command(hide = true)]
     CloseWindow { kitty_window: u64 },
     /// Send Esc to a session (interrupts Claude).
@@ -315,7 +321,8 @@ fn run(cmd: Cmd) -> Result<()> {
         Cmd::Ack { sid } => ok(Request::Ack { sid }),
         Cmd::Tile => ok(Request::Tile),
         Cmd::Untile => ok(Request::Untile),
-        Cmd::Close { sid } => ok(Request::Close { sid }),
+        Cmd::Close { sid, force } => ok(Request::Close { sid, force }),
+        Cmd::CloseTab { tab } => ok(Request::CloseTab { tab }),
         Cmd::CloseWindow { kitty_window } => ok(Request::CloseWindow { kitty_window }),
         Cmd::Interrupt { sid } => ok(Request::Interrupt { sid }),
         Cmd::Tail { sid, lines } => {

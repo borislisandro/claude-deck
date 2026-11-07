@@ -68,9 +68,21 @@ def draw_title(data: dict) -> str:
     top = sessions[0]
     key = _key(top)
     color = getattr(fmt.fg, '_' + COLORS[key])
-    dots = ''.join(getattr(fmt.fg, '_' + COLORS[_key(s)]) + GLYPH[_key(s)] for s in sessions)
+    if len(sessions) <= 4:
+        dots = ''.join(getattr(fmt.fg, '_' + COLORS[_key(s)]) + GLYPH[_key(s)] for s in sessions)
+    else:
+        # A crowded tab: one dot and a count per state, most urgent first.
+        counts = {}
+        for s in sessions:
+            counts[_key(s)] = counts.get(_key(s), 0) + 1
+        dots = ' '.join(getattr(fmt.fg, '_' + COLORS[k]) + GLYPH[k] + str(n)
+                        for k, n in sorted(counts.items(), key=lambda kv: RANK.get(kv[0], 9)))
     name = top.get('project', title)
     if len(sessions) > 1:
         name += f' +{len(sessions) - 1}'
+    # The model, when it means something for the whole tab: one session, or all alike.
+    models = {s.get('model') for s in sessions}
+    model = next(iter(models)) if len(models) == 1 else None
+    model_part = f'{fmt.fg._9a8a8c} · {model}{fmt.fg.tab}' if model else ''
     timer = _elapsed(top.get('since', 0)) if key in ('needs_you', 'your_turn') else ''
-    return f'{dots}{fmt.fg.tab} {top.get("index", data["index"])} {name}{color}{timer}{fmt.fg.tab}'
+    return f'{dots}{fmt.fg.tab} {top.get("index", data["index"])} {name}{model_part}{color}{timer}{fmt.fg.tab}'
