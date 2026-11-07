@@ -34,15 +34,13 @@ Item {
         : "transparent"
 
     visible: running
-    property real wantedWidth: running ? pill.width + Kirigami.Units.smallSpacing : 0
+    // Follows the pill, which animates its own width: animating this too would chase
+    // a moving target and lag behind it.
+    readonly property real wantedWidth: running ? pill.width + Kirigami.Units.smallSpacing : 0
     Layout.minimumWidth: wantedWidth
     Layout.preferredWidth: wantedWidth
     Layout.maximumWidth: wantedWidth
     Layout.fillHeight: true
-
-    Behavior on wantedWidth {
-        NumberAnimation { duration: Kirigami.Units.longDuration; easing.type: Easing.OutCubic }
-    }
 
     // Background clicks: middle starts a session, wheel switches. A left click here
     // does nothing: the popup has its own button, and critters own the space around them.
@@ -70,6 +68,9 @@ Item {
         height: Math.min(compact.height, Math.max(Math.round(compact.height * 0.74), compact.px * 11 + 4))
         width: content.implicitWidth + compact.pad * 2
         radius: height / 2
+        // The critters re-lay out at once while the pill widens to fit them: kept
+        // inside it, they never spill over the panel's other widgets meanwhile.
+        clip: true
         color: Plasmoid.configuration.ownBackground
             ? Qt.rgba(Kirigami.Theme.backgroundColor.r, Kirigami.Theme.backgroundColor.g, Kirigami.Theme.backgroundColor.b, 0.35)
             : "transparent"
@@ -77,21 +78,24 @@ Item {
         border.color: compact.deckRoot.unseen > 0
             ? Qt.rgba(compact.attention.r, compact.attention.g, compact.attention.b, 0.75)
             : Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.10)
-        Behavior on border.color { ColorAnimation { duration: 300 } }
+        Behavior on border.color { ColorAnimation { duration: Kirigami.Units.longDuration; easing.type: Easing.InOutQuad } }
         Behavior on width { NumberAnimation { duration: Kirigami.Units.longDuration; easing.type: Easing.OutCubic } }
 
-        // A slow glow across the pill while anything waits unseen.
+        // A slow glow across the pill while anything waits unseen, on the lights' beat
+        // (StatusDot): one swell every two. Off with Plasma's animations; the border
+        // still says it.
         Rectangle {
             anchors.fill: parent
             radius: parent.radius
             color: compact.attention
             opacity: 0
-            visible: compact.deckRoot.unseen > 0
+            visible: glow.running
             SequentialAnimation on opacity {
-                running: compact.deckRoot.unseen > 0
+                id: glow
+                running: compact.deckRoot.unseen > 0 && Kirigami.Units.longDuration > 1
                 loops: Animation.Infinite
-                NumberAnimation { from: 0; to: 0.16; duration: 1400; easing.type: Easing.InOutSine }
-                NumberAnimation { from: 0.16; to: 0; duration: 1400; easing.type: Easing.InOutSine }
+                NumberAnimation { from: 0; to: 0.16; duration: 1200; easing.type: Easing.InOutSine }
+                NumberAnimation { from: 0.16; to: 0; duration: 1200; easing.type: Easing.InOutSine }
             }
         }
 
@@ -125,9 +129,14 @@ Item {
             // in place instead of recreating it (which restarted its animation and
             // closed a hover card under the pointer on every hook event).
             Repeater {
+                id: sessionIcons
                 model: compact.mode === "sessions" ? compact.sessions.length : 0
+                /// How many it showed before the count last changed: icons past that are new.
+                property int settled: 0
+                onCountChanged: Qt.callLater(() => settled = count)
                 delegate: SessionIcon {
                     required property int index
+                    fadeIn: index >= sessionIcons.settled
                     session: compact.sessions[index] || compact.deckRoot.noSession
                     deckRoot: compact.deckRoot
                     px: compact.px
@@ -139,9 +148,13 @@ Item {
 
             // One critter per tab: the tab's most urgent session, and how many it holds.
             Repeater {
+                id: tabIcons
                 model: compact.mode === "tabs" ? compact.groups.length : 0
+                property int settled: 0
+                onCountChanged: Qt.callLater(() => settled = count)
                 delegate: SessionIcon {
                     required property int index
+                    fadeIn: index >= tabIcons.settled
                     readonly property var group: compact.groups[index] || null
                     session: group ? group.top : compact.deckRoot.noSession
                     groupSessions: group ? group.sessions : []

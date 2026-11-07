@@ -44,7 +44,7 @@ The state comes from Claude Code's own hooks, not from scraping the screen, and 
 | State | Critter | Light | Means |
 |---|---|---|---|
 | **Working** (green) | runs, kicking up dust | breathes | Claude is thinking or running tools. Nothing to do. |
-| **Needs you** (yellow) | hand on chin, thought bubble | blinks, quick ripple | A permission prompt, a question (`AskUserQuestion`), a plan to approve, or an MCP server asking something. |
+| **Needs you** (yellow) | hand on chin, thought bubble | pings: dims as a quick ripple leaves it | A permission prompt, a question (`AskUserQuestion`), a plan to approve, or an MCP server asking something. |
 | **Your turn** (red) | asleep, Z's floating up | slow ripple until you've looked | The turn is over and Claude waits for your next prompt. Once you've looked, the light dims and stops rippling. |
 | **Exited** (grey) | grey, eyes shut | hollow ring | Claude quit or crashed. The pane stays open with a menu. |
 
@@ -137,8 +137,8 @@ deck runs; otherwise it is zero pixels wide.
 | **Right-click** | New session, show sessions, jump to next waiting, tile, spread into tabs, restore, quit. |
 | **Meta+Alt+C** | Opens the popup (set by `install.sh --add-to-panel`; change it in the widget's settings). |
 
-**The popup** inflates out of the panel and lists your sessions grouped the way the deck has
-them. Everything starts folded, and the popup is exactly as tall as what it shows:
+**The popup** slides out of the panel, its cards following it up one after another, and lists
+your sessions grouped the way the deck has them. Everything starts folded, and the popup is exactly as tall as what it shows:
 
 - A tab with one session is a card: state, wait time, what it's doing, branch, model.
 - A tab with several sessions is a header (state counts, the shared model, spread into tabs,
@@ -153,6 +153,10 @@ them. Everything starts folded, and the popup is exactly as tall as what it show
 
 **Attention:** while anything waits unseen, the widget reports *needs attention* to Plasma, so
 the pill gets a colored border and a slow glow.
+
+**Motion** follows Plasma's animation speed (System Settings → General Behavior). Set it to
+instant and nothing in the widget moves: the critters hold their pose and the lights sit still,
+still colored by state. Nothing animates while it's off screen either, such as a closed popup.
 
 ### Notifications
 

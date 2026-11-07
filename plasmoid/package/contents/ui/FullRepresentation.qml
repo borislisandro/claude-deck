@@ -47,7 +47,7 @@ PlasmaExtras.Representation {
     Component.onCompleted: {
         shownGroups = deckRoot.groups
         // The popup is built on its first opening, after `expanded` already flipped.
-        if (deckRoot.expanded) Qt.callLater(full.blowUp)
+        if (deckRoot.expanded) Qt.callLater(() => full.opening())
     }
     Connections {
         target: full.deckRoot
@@ -55,92 +55,20 @@ PlasmaExtras.Representation {
             if (!dragCtl.active) full.shownGroups = full.deckRoot.groups
         }
         function onExpandedChanged() {
-            if (full.deckRoot.expanded) full.blowUp()
+            if (full.deckRoot.expanded) full.opening()
         }
     }
 
-    // ---- Opening: the popup inflates like a balloon ------------------------
-    // It swells out of the panel, stretched a little long, overshoots, wobbles
-    // back to its size (squash and stretch, the cross axis lagging behind), and the
-    // cards float up into place one after another.
+    // ---- Opening -------------------------------------------------------------
+    // KWin slides the popup out of the panel; inside it, the cards follow it up
+    // into place one after another, and the critter in the header gives one hop.
+    // Nothing else moves, so opening it often never gets tiresome.
 
-    /// Sent at the start of the inflate: the pieces that float in start then.
-    signal inflate()
+    /// Sent as the popup opens: the pieces that float in start then.
+    signal opening()
 
-    readonly property int panelEdge: Plasmoid.location
-    readonly property bool sidePanel: panelEdge === PlasmaCore.Types.LeftEdge || panelEdge === PlasmaCore.Types.RightEdge
-    /// Which way things float in: away from the panel (balloons rise off a bottom panel).
-    readonly property real floatSign: panelEdge === PlasmaCore.Types.TopEdge ? -1 : 1
-
-    /// Scale away from the panel, and across it.
-    property real inflateAlong: 1
-    property real inflateAcross: 1
-
-    transform: Scale {
-        // Grows out of the panel edge the popup hangs from.
-        origin.x: full.panelEdge === PlasmaCore.Types.LeftEdge ? 0
-            : full.panelEdge === PlasmaCore.Types.RightEdge ? full.width : full.width / 2
-        origin.y: full.panelEdge === PlasmaCore.Types.TopEdge ? 0
-            : full.sidePanel ? full.height / 2 : full.height
-        xScale: full.sidePanel ? full.inflateAlong : full.inflateAcross
-        yScale: full.sidePanel ? full.inflateAcross : full.inflateAlong
-    }
-
-    function blowUp() {
-        if (Kirigami.Units.longDuration === 0) return   // animations turned off
-        inflateAnim.restart()
-        inflate()
-    }
-
-    SequentialAnimation {
-        id: inflateAnim
-        ScriptAction {
-            script: {
-                full.inflateAlong = 0.3
-                full.inflateAcross = 0.55
-                full.opacity = 0
-            }
-        }
-        ParallelAnimation {
-            NumberAnimation {
-                target: full; property: "opacity"; to: 1
-                duration: 150; easing.type: Easing.OutQuad
-            }
-            SequentialAnimation {
-                NumberAnimation {
-                    target: full; property: "inflateAlong"; to: 1.045
-                    duration: 230; easing.type: Easing.OutCubic
-                }
-                NumberAnimation {
-                    target: full; property: "inflateAlong"; to: 0.98
-                    duration: 150; easing.type: Easing.InOutSine
-                }
-                NumberAnimation {
-                    target: full; property: "inflateAlong"; to: 1.008
-                    duration: 130; easing.type: Easing.InOutSine
-                }
-                NumberAnimation {
-                    target: full; property: "inflateAlong"; to: 1
-                    duration: 110; easing.type: Easing.InOutSine
-                }
-            }
-            SequentialAnimation {
-                PauseAnimation { duration: 40 }
-                NumberAnimation {
-                    target: full; property: "inflateAcross"; to: 1.03
-                    duration: 240; easing.type: Easing.OutCubic
-                }
-                NumberAnimation {
-                    target: full; property: "inflateAcross"; to: 0.985
-                    duration: 160; easing.type: Easing.InOutSine
-                }
-                NumberAnimation {
-                    target: full; property: "inflateAcross"; to: 1
-                    duration: 150; easing.type: Easing.InOutSine
-                }
-            }
-        }
-    }
+    /// Which way the cards float in: away from the panel (up off a bottom panel).
+    readonly property real floatSign: Plasmoid.location === PlasmaCore.Types.TopEdge ? -1 : 1
 
     /// Drag and drop of sessions between tabs.
     QtObject {
@@ -244,23 +172,29 @@ PlasmaExtras.Representation {
                 mood: (full.deckRoot.deck.counts || {}).working > 0 ? "running" : "idle"
                 body: Plasmoid.configuration.claudeColoredGlyph ? "#d97757" : Kirigami.Theme.textColor
                 Layout.leftMargin: Kirigami.Units.smallSpacing
-                // Hops for joy once the popup has filled out.
-                transform: Translate { id: hop }
+                // One hop as the cards come in: up three sprite pixels and down again
+                // under gravity, in whole pixels so the sprite stays crisp.
+                property real lift: 0
+                transform: Translate { y: -Math.round(headerCritter.lift) }
                 SequentialAnimation {
                     id: hopAnim
-                    PauseAnimation { duration: 300 }
+                    PauseAnimation { duration: Kirigami.Units.shortDuration }
                     NumberAnimation {
-                        target: hop; property: "y"; to: -Kirigami.Units.smallSpacing * 2.5
-                        duration: 150; easing.type: Easing.OutQuad
+                        target: headerCritter; property: "lift"; to: headerCritter.px * 3
+                        duration: Math.round(Kirigami.Units.longDuration * 0.6); easing.type: Easing.OutQuad
                     }
                     NumberAnimation {
-                        target: hop; property: "y"; to: 0
-                        duration: 380; easing.type: Easing.OutBounce
+                        target: headerCritter; property: "lift"; to: 0
+                        duration: Math.round(Kirigami.Units.longDuration * 0.6); easing.type: Easing.InQuad
                     }
                 }
                 Connections {
                     target: full
-                    function onInflate() { hopAnim.restart() }
+                    function onOpening() {
+                        hopAnim.stop()
+                        headerCritter.lift = 0
+                        if (Kirigami.Units.longDuration > 1) hopAnim.start()
+                    }
                 }
             }
             PlasmaExtras.Heading {
@@ -337,16 +271,17 @@ PlasmaExtras.Representation {
                     Layout.fillWidth: true
                     active: group !== null
                     sourceComponent: group && group.sessions.length === 1 ? singleCard : groupCard
-                    // Floats up after the one above it.
+                    // Floats up just after the one above it (the first six; the rest
+                    // come with the sixth, so a long list doesn't keep you waiting).
                     transform: Rise {
                         id: cardRise
                         target: groupLoader
-                        delay: 110 + Math.min(groupLoader.index, 8) * 50
-                        distance: Kirigami.Units.gridUnit * 1.3 * full.floatSign
+                        delay: Math.min(groupLoader.index, 5) * Math.round(Kirigami.Units.longDuration * 0.15)
+                        distance: Kirigami.Units.gridUnit * 0.6 * full.floatSign
                     }
                     Connections {
                         target: full
-                        function onInflate() { cardRise.play() }
+                        function onOpening() { cardRise.play() }
                     }
                     Component {
                         id: singleCard
@@ -419,6 +354,7 @@ PlasmaExtras.Representation {
             color: Qt.rgba(Kirigami.Theme.backgroundColor.r, Kirigami.Theme.backgroundColor.g, Kirigami.Theme.backgroundColor.b, 0.97)
             border.width: 2
             border.color: Qt.rgba(tint.r, tint.g, tint.b, dragCtl.overOwnTab ? 1 : 0.45)
+            Behavior on border.color { ColorAnimation { duration: Kirigami.Units.shortDuration } }
 
             Rectangle {
                 anchors.fill: parent
@@ -426,7 +362,7 @@ PlasmaExtras.Representation {
                 radius: parent.radius
                 color: ownTab.tint
                 opacity: dragCtl.overOwnTab ? 0.35 : 0.06
-                Behavior on opacity { NumberAnimation { duration: 100 } }
+                Behavior on opacity { NumberAnimation { duration: Kirigami.Units.shortDuration } }
             }
             RowLayout {
                 anchors.centerIn: parent

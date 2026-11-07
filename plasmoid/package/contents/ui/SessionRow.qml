@@ -29,7 +29,10 @@ Rectangle {
     color: hot || open
         ? Qt.rgba(Kirigami.Theme.highlightColor.r, Kirigami.Theme.highlightColor.g, Kirigami.Theme.highlightColor.b, hot ? 0.12 : 0.05)
         : "transparent"
-    Behavior on color { ColorAnimation { duration: 100 } }
+    Behavior on color { ColorAnimation { duration: Kirigami.Units.shortDuration } }
+
+    // What opening it reveals drops in under the line.
+    onOpenChanged: if (open) detailRise.play()
 
     HoverHandler {
         id: hover
@@ -117,6 +120,12 @@ Rectangle {
         }
 
         Loader {
+            id: detailLoader
+            transform: Rise {
+                id: detailRise
+                target: detailLoader
+                distance: -Kirigami.Units.gridUnit * 0.4
+            }
             Layout.fillWidth: true
             Layout.leftMargin: Kirigami.Units.gridUnit
             Layout.rightMargin: Kirigami.Units.smallSpacing

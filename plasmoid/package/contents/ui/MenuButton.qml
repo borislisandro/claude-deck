@@ -54,7 +54,7 @@ PlasmaCore.ToolTipArea {
         radius: width / 2
         color: Kirigami.Theme.textColor
         opacity: button.hot ? 0.14 : (button.open ? 0.08 : 0)
-        Behavior on opacity { NumberAnimation { duration: 120 } }
+        Behavior on opacity { NumberAnimation { duration: Kirigami.Units.shortDuration } }
     }
 
     // A 5x3 pixel chevron.
@@ -66,8 +66,9 @@ PlasmaCore.ToolTipArea {
         x: button.onLeft ? 0 : parent.width - width
         // Down by default; flip for a bottom panel, and again while the popup is open.
         rotation: (button.pointsUp ? 180 : 0) + (button.open ? 180 : 0)
-        Behavior on rotation { NumberAnimation { duration: Kirigami.Units.shortDuration; easing.type: Easing.OutCubic } }
+        Behavior on rotation { NumberAnimation { duration: Kirigami.Units.longDuration; easing.type: Easing.OutCubic } }
         opacity: button.hot || button.open ? 1 : 0.7
+        Behavior on opacity { NumberAnimation { duration: Kirigami.Units.shortDuration } }
 
         Repeater {
             model: [[0, 0], [4, 0], [1, 1], [3, 1], [2, 2]]
@@ -78,7 +79,7 @@ PlasmaCore.ToolTipArea {
                 width: button.px
                 height: button.px
                 color: button.ink
-                Behavior on color { ColorAnimation { duration: 300 } }
+                Behavior on color { ColorAnimation { duration: Kirigami.Units.longDuration; easing.type: Easing.InOutQuad } }
             }
         }
     }

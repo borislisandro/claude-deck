@@ -22,6 +22,9 @@ PlasmaCore.ToolTipArea {
     property real hitPadX: 0
     property real hitPadY: 0
     property int tabIndex: 0
+    /// Fades in on creation: set for a session new to the island, not for one that
+    /// was there already (the island rebuilds every icon when the count changes).
+    property bool fadeIn: false
     readonly property int count: groupSessions.length
 
     readonly property string status: session.status
@@ -45,6 +48,17 @@ PlasmaCore.ToolTipArea {
     }
     location: Plasmoid.location
     interactive: false
+
+    // A new session fades in while the pill widens to make room for it.
+    NumberAnimation {
+        id: appear
+        target: item; property: "opacity"; from: 0; to: 1
+        duration: Kirigami.Units.longDuration; easing.type: Easing.OutCubic
+    }
+    Component.onCompleted: if (fadeIn && Kirigami.Units.longDuration > 1) {
+        opacity = 0
+        appear.start()
+    }
 
     onContainsMouseChanged: {
         if (containsMouse) {
@@ -82,7 +96,7 @@ PlasmaCore.ToolTipArea {
         seen: item.seen
         color: item.tint
         waited: item.waited
-        Behavior on y { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+        Behavior on y { NumberAnimation { duration: Kirigami.Units.longDuration; easing.type: Easing.OutCubic } }
     }
 
     // How many sessions this tab holds.
@@ -143,7 +157,7 @@ PlasmaCore.ToolTipArea {
         radius: 1
         color: item.tint
         opacity: item.isFocused && item.deckRoot.deckActive ? 0.8 : 0
-        Behavior on opacity { NumberAnimation { duration: 200 } }
+        Behavior on opacity { NumberAnimation { duration: Kirigami.Units.longDuration; easing.type: Easing.InOutQuad } }
     }
 
     MouseArea {

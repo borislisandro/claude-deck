@@ -127,10 +127,11 @@ Rectangle {
                         color: Qt.rgba(Kirigami.Theme.highlightColor.r, Kirigami.Theme.highlightColor.g, Kirigami.Theme.highlightColor.b, 0.45)
                         border.width: 2
                         border.color: Kirigami.Theme.highlightColor
-                        Behavior on x { NumberAnimation { duration: 90 } }
-                        Behavior on y { NumberAnimation { duration: 90 } }
-                        Behavior on width { NumberAnimation { duration: 90 } }
-                        Behavior on height { NumberAnimation { duration: 90 } }
+                        // Slides to the half under the pointer: quick, so it keeps up with it.
+                        Behavior on x { NumberAnimation { duration: Kirigami.Units.shortDuration; easing.type: Easing.OutCubic } }
+                        Behavior on y { NumberAnimation { duration: Kirigami.Units.shortDuration; easing.type: Easing.OutCubic } }
+                        Behavior on width { NumberAnimation { duration: Kirigami.Units.shortDuration; easing.type: Easing.OutCubic } }
+                        Behavior on height { NumberAnimation { duration: Kirigami.Units.shortDuration; easing.type: Easing.OutCubic } }
 
                         PlasmaComponents3.Label {
                             anchors.centerIn: parent

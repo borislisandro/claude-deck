@@ -14,9 +14,12 @@
  * The antenna tip glows in the session's status color. Everything is drawn on a
  * Canvas at whole-pixel scale so it stays crisp on any panel. The body takes
  * columns 1-11 of the 16; the space above it holds the thought bubble (left) and
- * the Z's (right).
+ * the Z's (right). It holds still (in its mood's pose) when `animated` is off, while
+ * it's off screen (a closed popup, a hidden tooltip), and with animations turned
+ * off in Plasma.
  */
 import QtQuick
+import org.kde.kirigami as Kirigami
 
 Item {
     id: critter
@@ -40,6 +43,10 @@ Item {
 
     property int frame: 0
     property bool blinking: false
+    /// Moving: wanted, on screen, and animations on.
+    readonly property bool live: animated && visible && Kirigami.Units.longDuration > 1
+        && Window.window !== null && Window.window.visible
+    onLiveChanged: if (!live && blinking) blinking = false
 
     onMoodChanged: { frame = 0; canvas.requestPaint() }
     onPxChanged: canvas.requestPaint()
@@ -49,7 +56,7 @@ Item {
 
     Timer {
         interval: critter.mood === "running" ? 115 : critter.mood === "thinking" ? 170 : critter.mood === "resting" ? 120 : 900
-        running: critter.animated && critter.visible && critter.mood !== "exited"
+        running: critter.live && critter.mood !== "exited"
         repeat: true
         onTriggered: {
             critter.frame = (critter.frame + 1) % 100000
@@ -59,7 +66,7 @@ Item {
 
     Timer {
         interval: 2600 + Math.random() * 2400
-        running: critter.animated && critter.visible && (critter.mood === "idle" || critter.mood === "thinking")
+        running: critter.live && (critter.mood === "idle" || critter.mood === "thinking")
         repeat: true
         onTriggered: {
             critter.blinking = true

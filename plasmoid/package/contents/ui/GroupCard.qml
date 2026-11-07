@@ -24,11 +24,20 @@ Rectangle {
 
     implicitHeight: col.implicitHeight + Kirigami.Units.largeSpacing * 2
     radius: Kirigami.Units.cornerRadius * 2
-    color: Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.04)
+    // Lights up under the pointer like a session card while its header is hovered
+    // (the rows, once open, light up on their own).
+    color: headerHover.hovered
+        ? Qt.rgba(Kirigami.Theme.highlightColor.r, Kirigami.Theme.highlightColor.g, Kirigami.Theme.highlightColor.b, 0.10)
+        : Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.04)
     border.width: 1
     border.color: group.unseen > 0
         ? Qt.rgba(card.tint.r, card.tint.g, card.tint.b, 0.7)
         : Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.08)
+    Behavior on color { ColorAnimation { duration: Kirigami.Units.shortDuration } }
+    Behavior on border.color { ColorAnimation { duration: Kirigami.Units.longDuration; easing.type: Easing.InOutQuad } }
+
+    // Its sessions drop in under the header when it opens.
+    onOpenChanged: if (open) rowsRise.play()
 
     Rectangle {
         anchors.left: parent.left
@@ -38,6 +47,7 @@ Rectangle {
         width: 3
         radius: 2
         color: card.tint
+        Behavior on color { ColorAnimation { duration: Kirigami.Units.longDuration; easing.type: Easing.InOutQuad } }
     }
 
     // A click on the header (not its buttons, which sit above) opens or folds the tab.
@@ -48,6 +58,8 @@ Rectangle {
         height: col.y + headerRow.y + headerRow.height + Kirigami.Units.smallSpacing
         cursorShape: Qt.PointingHandCursor
         onClicked: card.deckRoot.toggleOpen(card.group.key)
+        // Passive, so it stays hovered over the header's buttons too.
+        HoverHandler { id: headerHover }
     }
 
     ColumnLayout {
@@ -117,15 +129,27 @@ Rectangle {
             }
         }
 
-        Repeater {
-            model: card.open ? card.group.sessions.length : 0
-            delegate: SessionRow {
-                required property int index
-                session: card.group.sessions[index] || card.deckRoot.noSession
-                deckRoot: card.deckRoot
-                dnd: card.dnd
-                showProject: card.mixedProjects
-                Layout.fillWidth: true
+        ColumnLayout {
+            id: rows
+            Layout.fillWidth: true
+            visible: card.open
+            spacing: col.spacing
+            transform: Rise {
+                id: rowsRise
+                target: rows
+                distance: -Kirigami.Units.gridUnit * 0.4
+            }
+
+            Repeater {
+                model: card.open ? card.group.sessions.length : 0
+                delegate: SessionRow {
+                    required property int index
+                    session: card.group.sessions[index] || card.deckRoot.noSession
+                    deckRoot: card.deckRoot
+                    dnd: card.dnd
+                    showProject: card.mixedProjects
+                    Layout.fillWidth: true
+                }
             }
         }
     }

@@ -32,7 +32,11 @@ Rectangle {
     border.color: !card.session.seen
         ? Qt.rgba(card.tint.r, card.tint.g, card.tint.b, 0.7)
         : Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.08)
-    Behavior on color { ColorAnimation { duration: 120 } }
+    Behavior on color { ColorAnimation { duration: Kirigami.Units.shortDuration } }
+    Behavior on border.color { ColorAnimation { duration: Kirigami.Units.longDuration; easing.type: Easing.InOutQuad } }
+
+    // What opening it reveals drops in under the header.
+    onOpenChanged: if (open) detailRise.play()
 
     HoverHandler {
         id: hover
@@ -55,6 +59,7 @@ Rectangle {
         width: 3
         radius: 2
         color: card.tint
+        Behavior on color { ColorAnimation { duration: Kirigami.Units.longDuration; easing.type: Easing.InOutQuad } }
     }
 
     ColumnLayout {
@@ -143,9 +148,15 @@ Rectangle {
         }
 
         Loader {
+            id: detailLoader
             Layout.fillWidth: true
             active: card.open
             visible: active
+            transform: Rise {
+                id: detailRise
+                target: detailLoader
+                distance: -Kirigami.Units.gridUnit * 0.4
+            }
             sourceComponent: SessionDetail {
                 session: card.session
                 deckRoot: card.deckRoot

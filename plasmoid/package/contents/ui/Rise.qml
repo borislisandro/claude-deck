@@ -1,7 +1,8 @@
 /*
- * A transform that floats its item into place like a released balloon: it starts
- * a little off (toward the panel), faded out, and drifts in with a soft bob.
- * `play()` runs it; with animations turned off in Plasma it does nothing.
+ * The popup's one entrance: its item starts a little off, faded out, and settles
+ * into place. The cards use it when the popup opens; an opened-up session or tab
+ * uses it for what it reveals. `play()` runs it. It takes Plasma's animation speed,
+ * and with animations turned off it only makes sure the item is in place.
  */
 import QtQuick
 import org.kde.kirigami as Kirigami
@@ -14,35 +15,38 @@ Translate {
     /// Waits this long (ms) before moving: set per item for a staggered entrance.
     property int delay: 0
     /// How far it starts from home, in px; negative starts above.
-    property real distance: Kirigami.Units.gridUnit * 1.3
+    property real distance: Kirigami.Units.gridUnit * 0.6
 
     function play() {
-        if (!target || Kirigami.Units.longDuration === 0) return
-        anim.restart()
+        anim.stop()
+        if (!target) return
+        if (Kirigami.Units.longDuration <= 1) {   // animations off (Kirigami then says 1 ms)
+            rise.y = 0
+            target.opacity = 1
+            return
+        }
+        // Set here, not in the animation, so not one frame shows it at home first.
+        rise.y = rise.distance
+        target.opacity = 0
+        anim.start()
     }
 
     property SequentialAnimation anim: SequentialAnimation {
-        ScriptAction {
-            script: {
-                rise.y = rise.distance
-                rise.target.opacity = 0
-            }
-        }
         PauseAnimation { duration: rise.delay }
         ParallelAnimation {
             NumberAnimation {
                 target: rise
                 property: "y"
                 to: 0
-                duration: 460
-                easing.type: Easing.OutBack
-                easing.overshoot: 2.4
+                duration: Kirigami.Units.longDuration
+                easing.type: Easing.OutCubic
             }
+            // Readable before it has quite settled.
             NumberAnimation {
                 target: rise.target
                 property: "opacity"
                 to: 1
-                duration: 220
+                duration: Math.round(Kirigami.Units.longDuration * 0.7)
                 easing.type: Easing.OutQuad
             }
         }

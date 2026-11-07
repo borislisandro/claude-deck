@@ -23,6 +23,8 @@ PlasmaComponents3.ToolButton {
     icon.color: armed ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor
     PlasmaComponents3.ToolTip.text: armed ? i18n("Click again to confirm") : tip
     PlasmaComponents3.ToolTip.visible: hovered && tip.length > 0
+    // Cards show it faintly until hovered.
+    Behavior on opacity { NumberAnimation { duration: Kirigami.Units.shortDuration } }
 
     onClicked: {
         if (!needsConfirm || armed) {
