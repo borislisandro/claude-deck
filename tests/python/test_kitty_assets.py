@@ -256,6 +256,18 @@ class KittenTest(unittest.TestCase):
         self.assertEqual((right['window'], right['x']), (2, 0.5))
         self.assertEqual(tabs[1]['panes'], [{'window': 3, 'x': 0, 'y': 0, 'w': 1, 'h': 1}])
 
+    def test_panes_carry_the_tabs_shape_and_split_tree(self):
+        boss, t1, t2 = two_tabs()
+        Pair = sys.modules['kitty.layout.splits'].Pair
+        root = Pair(horizontal=True)
+        root.one, root.two, root.bias = 1, Pair(horizontal=False), 0.3
+        root.two.one, root.two.two = 2, 99  # 99: a group with no window any more
+        t1.current_layout.pairs_root = root
+        tab = json.loads(kitten(boss, 'panes'))[0]
+        self.assertEqual(tab['tree'], {'h': True, 'bias': 0.3, 'one': 1, 'two': 2})
+        self.assertGreater(tab['aspect'], 0)
+        self.assertNotIn('tree', json.loads(kitten(boss, 'panes'))[1], 'one pane, no splits')
+
     def test_zoomed_tab_panes_become_columns(self):
         boss, t1, t2 = two_tabs()
         t1.current_layout = Layout('stack')

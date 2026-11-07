@@ -18,6 +18,8 @@ Rectangle {
     property var dnd: null
     /// Show the project name (when the tab mixes projects) instead of only the activity.
     property bool showProject: false
+    /// Lit from elsewhere: its pane is hovered on the tab's map.
+    property bool lit: false
 
     readonly property color tint: deckRoot.statusColor(session.status, session.seen)
     readonly property bool busy: session.status === "working" || session.status === "needs_you"
@@ -26,8 +28,8 @@ Rectangle {
 
     implicitHeight: col.implicitHeight + Kirigami.Units.smallSpacing * 2
     radius: Kirigami.Units.cornerRadius
-    color: hot || open
-        ? Qt.rgba(Kirigami.Theme.highlightColor.r, Kirigami.Theme.highlightColor.g, Kirigami.Theme.highlightColor.b, hot ? 0.12 : 0.05)
+    color: hot || lit || open
+        ? Qt.rgba(Kirigami.Theme.highlightColor.r, Kirigami.Theme.highlightColor.g, Kirigami.Theme.highlightColor.b, hot || lit ? 0.12 : 0.05)
         : "transparent"
     Behavior on color { ColorAnimation { duration: Kirigami.Units.shortDuration } }
 

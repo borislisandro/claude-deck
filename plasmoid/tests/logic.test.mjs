@@ -85,7 +85,7 @@ test("popupUnits stays within bounds and follows opening", () => {
     const three = { key: "b", sessions: [{ sid: "s2" }, { sid: "s3" }, { sid: "s4" }] }
     assert.equal(L.popupUnits([], {}), 8, "minimum")
     assert.equal(L.popupUnits([one, three], {}), 5.5 + 4 + 2.6, "everything folded")
-    assert.equal(L.popupUnits([one, three], { b: true }), 5.5 + 4 + 2.6 + 6)
+    assert.equal(L.popupUnits([one, three], { b: true }), 5.5 + 4 + 2.6 + 6 + 6, "its map and rows")
     assert.equal(L.popupUnits([one, three], { s1: true, s3: true }), 5.5 + 4 + 12 + 2.6, "a row opens only inside an open tab")
     assert.equal(L.popupUnits(Array(20).fill(one), { s1: true }), 44, "maximum")
 })
@@ -142,4 +142,64 @@ test("panesFor prefers kitty's layout, else one column per session", () => {
     assert.deepEqual(plain(guessed.map(p => [p.window, p.x, p.w])), [[1, 0, 0.5], [2, 0.5, 0.5]])
     assert.deepEqual(plain(L.panesFor(null, {})), [])
     assert.equal(L.panesFor({ ...group, tab: null }, { 10: { panes: fromKitty } }).length, 2, "no tab: guessed")
+})
+
+const round = panes => plain(panes).map(p => [p.window, ...[p.x, p.y, p.w, p.h].map(v => Math.round(v * 1000) / 1000)])
+
+test("panesWithout: kitty's tree closes up around the pane that moves", () => {
+    // 1 | (2 over 3): 2 leaves, 3 takes the whole right column.
+    const group = { tab: 10, sessions: [] }
+    const tab = {
+        tree: { h: true, bias: 0.5, one: 1, two: { h: false, bias: 0.5, one: 2, two: 3 } },
+        panes: [
+            { window: 1, x: 0, y: 0, w: 0.5, h: 1 },
+            { window: 2, x: 0.5, y: 0, w: 0.5, h: 0.5 },
+            { window: 3, x: 0.5, y: 0.5, w: 0.5, h: 0.5 },
+        ],
+    }
+    assert.deepEqual(round(L.panesWithout(group, { 10: tab }, 2)), [[1, 0, 0, 0.5, 1], [3, 0.5, 0, 0.5, 1]])
+    // 1 leaves: the right column (its sibling) takes the whole tab.
+    assert.deepEqual(round(L.panesWithout(group, { 10: tab }, 1)), [[2, 0, 0, 1, 0.5], [3, 0, 0.5, 1, 0.5]])
+    assert.equal(L.panesWithout(group, { 10: tab }, 99), tab.panes, "not in the tab: as it is")
+    assert.deepEqual(plain(L.panesWithout(group, { 10: { panes: [{ window: 1, x: 0, y: 0, w: 1, h: 1 }] } }, 1)), [], "alone in its tab")
+})
+
+test("panesWithout rebuilds the cuts from the panes when kitty sent no tree", () => {
+    // Three columns a border apart (as kitty measures them); the middle one leaves.
+    const group = { tab: 10, sessions: [] }
+    const panes = [
+        { window: 1, x: 0, y: 0, w: 0.33, h: 1 },
+        { window: 2, x: 0.335, y: 0, w: 0.33, h: 1 },
+        { window: 3, x: 0.67, y: 0, w: 0.33, h: 1 },
+    ]
+    const out = round(L.panesWithout(group, { 10: { panes } }, 2))
+    assert.deepEqual(out.map(p => p[0]), [1, 3])
+    assert.ok(Math.abs(out[0][3] - 0.5) < 0.01 && Math.abs(out[1][1] - 0.5) < 0.01, "the other two share the room")
+    // Stacked rows.
+    const rows = [{ window: 1, x: 0, y: 0, w: 1, h: 0.5 }, { window: 2, x: 0, y: 0.5, w: 1, h: 0.5 }]
+    assert.deepEqual(round(L.panesWithout(group, { 10: { panes: rows } }, 1)), [[2, 0, 0, 1, 1]])
+})
+
+test("treeFromPanes gives up on a pinwheel; panesWithout then leaves a hole", () => {
+    const pinwheel = [
+        { window: 1, x: 0, y: 0, w: 0.66, h: 0.33 },
+        { window: 2, x: 0.66, y: 0, w: 0.34, h: 0.66 },
+        { window: 3, x: 0.33, y: 0.66, w: 0.67, h: 0.34 },
+        { window: 4, x: 0, y: 0.33, w: 0.33, h: 0.67 },
+        { window: 5, x: 0.33, y: 0.33, w: 0.33, h: 0.33 },
+    ]
+    assert.equal(L.treeFromPanes(pinwheel), null)
+    assert.equal(L.panesWithout({ tab: 1, sessions: [] }, { 1: { panes: pinwheel } }, 5).length, 4)
+})
+
+test("fromKittyTree drops empty halves and odd biases", () => {
+    assert.equal(L.fromKittyTree({ h: true, bias: 0.5, one: 4, two: null }), 4)
+    assert.deepEqual(plain(L.fromKittyTree({ h: false, bias: 7, one: 1, two: 2 })),
+        { h: false, parts: [{ size: 0.5, node: 1 }, { size: 0.5, node: 2 }] })
+})
+
+test("tabAspect: kitty's when known", () => {
+    assert.equal(L.tabAspect({ tab: 1 }, { 1: { aspect: 0.4 } }, 0.5), 0.4)
+    assert.equal(L.tabAspect({ tab: 2 }, { 1: { aspect: 0.4 } }, 0.5), 0.5)
+    assert.equal(L.tabAspect(null, {}, 0.5), 0.5)
 })

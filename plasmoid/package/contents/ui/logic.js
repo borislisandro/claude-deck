@@ -79,7 +79,8 @@ function popupUnits(groups, open) {
     for (const g of groups) {
         const single = g.sessions.length === 1
         u += single ? 4 : 2.6
-        if (!single && open[g.key]) u += 2 * g.sessions.length
+        // Opened: the map of its panes, then a line per session.
+        if (!single && open[g.key]) u += 6 + 2 * g.sessions.length
         for (const s of g.sessions) {
             if (open[s.sid] && (single || open[g.key])) u += 12
         }
@@ -140,4 +141,113 @@ function panesFor(group, paneTabs) {
     if (t && t.panes.length > 0) return t.panes
     const ws = group.sessions.filter(s => !!s.kitty_window)
     return ws.map((s, i) => ({ window: s.kitty_window, x: i / ws.length, y: 0, w: 1 / ws.length, h: 1 }))
+}
+
+/// A tab's height over its width (how the deck draws it), or `fallback` when kitty
+/// hasn't said.
+function tabAspect(group, paneTabs, fallback) {
+    const t = group && group.tab !== null && group.tab !== undefined ? paneTabs[group.tab] : null
+    return t && t.aspect > 0 ? t.aspect : fallback
+}
+
+// ---- A tab's splits as a tree -------------------------------------------------
+// A node is a window id (a pane) or { h, parts: [{ size, node }] }: its parts side
+// by side (h) or stacked, each with its share of the room (the shares add up to 1).
+
+/// kitty's splits tree ({ h, bias, one, two }, window ids at the leaves) as a node.
+function fromKittyTree(t) {
+    if (t === null || t === undefined) return null
+    if (typeof t === "number") return t
+    const one = fromKittyTree(t.one)
+    const two = fromKittyTree(t.two)
+    if (one === null) return two
+    if (two === null) return one
+    const bias = t.bias > 0 && t.bias < 1 ? t.bias : 0.5
+    return { h: !!t.h, parts: [{ size: bias, node: one }, { size: 1 - bias, node: two }] }
+}
+
+/// A node rebuilt from pane rectangles (for layouts other than splits): the tab
+/// cut into columns, or failing that rows, and each of those likewise. Null if the
+/// panes can't be cut up that way.
+function treeFromPanes(panes) {
+    if (!panes || panes.length === 0) return null
+    if (panes.length === 1) return panes[0].window
+    for (const h of [true, false]) {
+        const at = p => h ? p.x : p.y
+        const len = p => h ? p.w : p.h
+        const sorted = panes.slice().sort((a, b) => at(a) - at(b))
+        const runs = []
+        let cur = [], end = -Infinity
+        for (const p of sorted) {
+            // Panes sit a border apart, so a cut is wherever the next starts at or
+            // past (nearly) the end of everything before it.
+            if (cur.length > 0 && at(p) >= end - 0.01) {
+                runs.push(cur)
+                cur = []
+                end = -Infinity
+            }
+            cur.push(p)
+            end = Math.max(end, at(p) + len(p))
+        }
+        runs.push(cur)
+        if (runs.length < 2) continue
+        const parts = []
+        for (const r of runs) {
+            const node = treeFromPanes(r)
+            if (node === null) return null
+            const lo = Math.min(...r.map(at))
+            parts.push({ size: Math.max(...r.map(p => at(p) + len(p))) - lo, node: node })
+        }
+        return { h: h, parts: shares(parts) }
+    }
+    return null
+}
+
+function shares(parts) {
+    const total = parts.reduce((t, p) => t + p.size, 0)
+    return parts.map(p => ({ size: total > 0 ? p.size / total : 1 / parts.length, node: p.node }))
+}
+
+/// The node with a pane taken out: as in kitty, what was split with it takes its room.
+function withoutWindow(node, window) {
+    if (node === null || node === undefined) return null
+    if (typeof node === "number") return node === window ? null : node
+    const parts = node.parts
+        .map(p => ({ size: p.size, node: withoutWindow(p.node, window) }))
+        .filter(p => p.node !== null)
+    if (parts.length === 0) return null
+    if (parts.length === 1) return parts[0].node
+    return { h: node.h, parts: shares(parts) }
+}
+
+/// A node laid out in the unit square: [{ window, x, y, w, h }].
+function layoutTree(node, x, y, w, h, out) {
+    out = out || []
+    if (node === null || node === undefined) return out
+    if (typeof node === "number") {
+        out.push({ window: node, x: x, y: y, w: w, h: h })
+        return out
+    }
+    let at = node.h ? x : y
+    for (const p of node.parts) {
+        if (node.h) layoutTree(p.node, at, y, w * p.size, h, out)
+        else layoutTree(p.node, x, at, w, h * p.size, out)
+        at += (node.h ? w : h) * p.size
+    }
+    return out
+}
+
+/// A tab's panes once `window` has moved out of it (`window` not in the tab: as
+/// they are). From kitty's tree when it sent one, else rebuilt from the panes; if
+/// neither works, the others stay put around the hole.
+function panesWithout(group, paneTabs, window) {
+    const panes = panesFor(group, paneTabs)
+    if (!panes.some(p => p.window === window)) return panes
+    const t = group && group.tab !== null && group.tab !== undefined ? paneTabs[group.tab] : null
+    let tree = t && t.tree !== undefined ? fromKittyTree(t.tree) : null
+    // A tree that disagrees with the panes (stale) is no use.
+    if (tree !== null && layoutTree(tree, 0, 0, 1, 1).length !== panes.length) tree = null
+    if (tree === null) tree = treeFromPanes(panes)
+    if (tree === null) return panes.filter(p => p.window !== window)
+    return layoutTree(withoutWindow(tree, window), 0, 0, 1, 1)
 }

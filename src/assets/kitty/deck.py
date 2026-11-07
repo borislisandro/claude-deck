@@ -68,6 +68,22 @@ def _even_splits(tab) -> None:
     tab.relayout()
 
 
+def _split_tree(node, main_of):
+    """A splits layout's tree as plain data: a window id at the leaves, and at each
+    split {h: side by side?, bias: the first child's share, one, two}. None if empty."""
+    from kitty.layout.splits import Pair
+
+    if isinstance(node, Pair):
+        one = _split_tree(node.one, main_of)
+        two = _split_tree(node.two, main_of)
+        if one is None or two is None:
+            return one if two is None else two
+        return {'h': bool(node.horizontal), 'bias': float(node.bias), 'one': one, 'two': two}
+    if node is None:
+        return None
+    return main_of.get(node)
+
+
 @result_handler(no_ui=True)
 def handle_result(args: list[str], answer, target_window_id: int, boss):
     cmd, rest = (args[1], args[2:]) if len(args) > 1 else ('', [])
@@ -172,13 +188,33 @@ def handle_result(args: list[str], answer, target_window_id: int, boss):
         for tm in boss.all_tab_managers:
             for t in tm:
                 ids = []
+                main_of = {}
                 for g in t.windows.iter_all_layoutable_groups():
                     w = boss.window_id_map.get(g.main_window_id)
                     if w is not None:
                         ids.append(w)
+                        main_of[g.id] = w.id
                 if not ids:
                     continue
                 layout = t.current_layout.name
+                entry = {'tab': t.id, 'layout': layout}
+                # The tab's shape (height over width), so the map is drawn in proportion.
+                try:
+                    wd = max(w.geometry.right for w in ids) - min(w.geometry.left for w in ids)
+                    ht = max(w.geometry.bottom for w in ids) - min(w.geometry.top for w in ids)
+                    if wd > 0 and ht > 0 and layout != 'stack':
+                        entry['aspect'] = round(ht / wd, 4)
+                except Exception:
+                    pass
+                # The splits tree, so the popup can show how the tab closes up around
+                # a pane being moved out of it (its sibling takes its room, as in kitty).
+                if layout == 'splits':
+                    try:
+                        tree = _split_tree(t.current_layout.pairs_root, main_of)
+                        if tree is not None:
+                            entry['tree'] = tree
+                    except Exception:
+                        pass
                 panes = []
                 if layout == 'stack' and len(ids) > 1:
                     # Zoomed: every pane has the same geometry; draw them as columns.
@@ -196,7 +232,8 @@ def handle_result(args: list[str], answer, target_window_id: int, boss):
                             'x': (g.left - left) / width, 'y': (g.top - top) / height,
                             'w': (g.right - g.left) / width, 'h': (g.bottom - g.top) / height,
                         })
-                tabs.append({'tab': t.id, 'layout': layout, 'panes': panes})
+                entry['panes'] = panes
+                tabs.append(entry)
         return json.dumps(tabs)
 
     if cmd == 'untile-tab':

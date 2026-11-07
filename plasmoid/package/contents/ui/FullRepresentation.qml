@@ -4,8 +4,9 @@
  * session opens up onto Claude's latest message and a prompt box. Everything
  * starts folded; the popup is as tall as what it shows.
  * Drag a session onto another tab (or its own) to tile it there: a map of that
- * tab's panes shows which side of which pane it will take. Dropping it on the
- * "own tab" strip at the bottom moves it out into a tab of its own.
+ * tab's panes, as they will be once it has left its place, shows which side of
+ * which pane it will take. Dropping it on the "own tab" strip at the bottom moves
+ * it out into a tab of its own.
  */
 import QtQuick
 import QtQuick.Layouts
@@ -37,7 +38,10 @@ PlasmaExtras.Representation {
     readonly property real maxHeight: Math.min(Kirigami.Units.gridUnit * 44,
         Screen.desktopAvailableHeight > 0 ? Screen.desktopAvailableHeight * 0.85 : Infinity)
     readonly property real measuredHeight: heading.implicitHeight + body.implicitHeight + Kirigami.Units.largeSpacing
-    readonly property real wantedHeight: Math.round(Math.min(maxHeight, Math.max(Kirigami.Units.gridUnit * 8,
+    /// With sessions to move around, tall enough for the drop map and the "own tab"
+    /// strip below it, so a dragged session always has a map worth aiming at.
+    readonly property real minHeight: Kirigami.Units.gridUnit * (full.deckRoot.sessions.length > 1 ? 17 : 8)
+    readonly property real wantedHeight: Math.round(Math.min(maxHeight, Math.max(minHeight,
         body.implicitHeight > 0 ? measuredHeight : Kirigami.Units.gridUnit * full.deckRoot.popupUnits)))
 
     // Groups as shown. Frozen while dragging: rebuilding the cards mid-drag would
@@ -84,8 +88,11 @@ PlasmaExtras.Representation {
         readonly property Item space: dragLayer
 
         readonly property var hoverGroup: hoverIndex >= 0 ? full.shownGroups[hoverIndex] || null : null
-        /// Panes of the hovered tab, from kitty; until those arrive, one column per session.
-        readonly property var hoverPanes: Logic.panesFor(hoverGroup, full.deckRoot.paneTabs)
+        readonly property int draggedWindow: session && session.kitty_window ? session.kitty_window : -1
+        /// Panes of the hovered tab (from kitty; until those arrive, one column per
+        /// session) as they will be once the dragged session has left its place.
+        readonly property var hoverPanes: Logic.panesWithout(hoverGroup, full.deckRoot.paneTabs, draggedWindow)
+        readonly property real hoverAspect: Logic.tabAspect(hoverGroup, full.deckRoot.paneTabs, 0.45)
         /// How many panes share the dragged session's tab (1: it's already on its own).
         readonly property int sourcePanes: {
             if (!session) return 0
@@ -126,8 +133,10 @@ PlasmaExtras.Representation {
                 const r = it.mapToItem(dragLayer, 0, 0)
                 if (p.x >= r.x && p.y >= r.y && p.x <= r.x + it.width && p.y <= r.y + it.height) {
                     const g = full.shownGroups[i]
-                    // Sessions not in a known kitty tab can't be targeted.
-                    if (g && g.tab !== null && g.tab !== undefined) hoverIndex = i
+                    // Sessions not in a known kitty tab can't be targeted, nor a tab
+                    // the dragged session has to itself (nothing would be left to aim at).
+                    if (g && g.tab !== null && g.tab !== undefined
+                        && Logic.panesWithout(g, full.deckRoot.paneTabs, draggedWindow).length > 0) hoverIndex = i
                     break
                 }
             }
@@ -308,7 +317,7 @@ PlasmaExtras.Representation {
                 Layout.topMargin: Kirigami.Units.smallSpacing
                 Layout.bottomMargin: Kirigami.Units.smallSpacing
                 horizontalAlignment: Text.AlignHCenter
-                text: i18n("Click a session to open it · drag it onto another tab to tile it there")
+                text: i18n("Click a session to open it · drag it onto a tab to tile it there · open a tab to see how it is split")
                 opacity: 0.5
                 font: Kirigami.Theme.smallFont
                 wrapMode: Text.Wrap
@@ -316,9 +325,11 @@ PlasmaExtras.Representation {
         }
     }
 
-    // Above the list while dragging: the drop map, the "own tab" strip and the ghost.
+    // Above the list (and the header: the map may need its room) while dragging:
+    // the drop map, the "own tab" strip and the ghost.
     Item {
         id: dragLayer
+        parent: full
         anchors.fill: parent
         z: 10
         visible: dragCtl.active
@@ -329,13 +340,14 @@ PlasmaExtras.Representation {
             visible: dragCtl.active && dragCtl.hoverGroup !== null
             group: dragCtl.hoverGroup
             panes: dragCtl.hoverPanes
+            aspect: dragCtl.hoverAspect
             dragged: dragCtl.session
             pointer: Qt.point(dragCtl.pos.x - x, dragCtl.pos.y - y)
 
             readonly property real bottomLimit: ownTab.visible ? ownTab.y - Kirigami.Units.smallSpacing : dragLayer.height
             x: dragCtl.cardRect.x
             width: dragCtl.cardRect.width
-            height: Math.min(bottomLimit, Math.max(dragCtl.cardRect.height, Kirigami.Units.gridUnit * 8))
+            height: Math.min(bottomLimit, wantedHeight)
             // Centered on the card, kept inside the popup.
             y: Math.max(0, Math.min(bottomLimit - height, dragCtl.cardRect.y + dragCtl.cardRect.height / 2 - height / 2))
         }
@@ -418,10 +430,11 @@ PlasmaExtras.Representation {
             const f = scroll.contentItem
             if (!f || f.contentY === undefined || (dropMap.visible && dragCtl.within(dropMap, dragCtl.pos))) return
             const edge = Kirigami.Units.gridUnit * 1.5
+            const top = scroll.mapToItem(dragLayer, 0, 0).y
             const bottom = ownTab.visible ? ownTab.y : dragLayer.height
             const maxY = Math.max(0, f.contentHeight - f.height)
             let dy = 0
-            if (dragCtl.pos.y < edge) dy = -10
+            if (dragCtl.pos.y < top + edge) dy = -10
             else if (dragCtl.pos.y > bottom - edge && dragCtl.pos.y < bottom) dy = 10
             if (dy !== 0) {
                 f.contentY = Math.max(0, Math.min(maxY, f.contentY + dy))

@@ -1,12 +1,15 @@
 /*
- * A deck tab holding several sessions: one header for the tab and, once opened
- * (folded is the default), one row per session. A click on the header opens or
- * folds it; each row opens the session it shows.
+ * A deck tab holding several sessions: one header for the tab (with a small
+ * picture of how its panes are split) and, once opened (folded is the default),
+ * a map of its panes as they sit in the deck, then one row per session. A click
+ * on the header opens or folds it; a pane or a row opens the session it shows,
+ * and dragging either moves that session beside another pane.
  */
 import QtQuick
 import QtQuick.Layouts
 import org.kde.plasma.components as PlasmaComponents3
 import org.kde.kirigami as Kirigami
+import "logic.js" as Logic
 
 Rectangle {
     id: card
@@ -21,6 +24,11 @@ Rectangle {
     readonly property bool open: deckRoot.isOpen(group.key)
     readonly property bool anyBusy: group.counts.working + group.counts.needs_you > 0
     readonly property bool mixedProjects: group.projects.length > 1
+    /// The tab's panes where they sit in it, and its shape (height over width).
+    readonly property var panes: Logic.panesFor(group, deckRoot.paneTabs)
+    readonly property real aspect: Logic.tabAspect(group, deckRoot.paneTabs, 0.45)
+    /// The kitty window of the row under the pointer (its pane lights up on the map).
+    property int rowHotWindow: -1
 
     implicitHeight: col.implicitHeight + Kirigami.Units.largeSpacing * 2
     radius: Kirigami.Units.cornerRadius * 2
@@ -84,6 +92,16 @@ Rectangle {
                 opacity: 0.55
                 font.weight: Font.DemiBold
             }
+            // How the tab is split, at a glance.
+            PaneMap {
+                deckRoot: card.deckRoot
+                labels: false
+                panes: card.panes
+                Layout.preferredWidth: Math.round(Kirigami.Units.gridUnit * 1.3)
+                Layout.preferredHeight: Math.round(Kirigami.Units.gridUnit * 0.85)
+                Layout.alignment: Qt.AlignVCenter
+                opacity: 0.85
+            }
             PlasmaComponents3.Label {
                 text: card.group.projects.join(", ")
                 font.bold: true
@@ -140,6 +158,31 @@ Rectangle {
                 distance: -Kirigami.Units.gridUnit * 0.4
             }
 
+            // The panes as the deck has them: click one to open it, drag it beside
+            // another to move it.
+            PaneMap {
+                id: paneMap
+                visible: card.open && card.panes.length > 1
+                deckRoot: card.deckRoot
+                dnd: card.dnd
+                panes: card.panes
+                litWindow: card.rowHotWindow
+                Layout.fillWidth: true
+                Layout.topMargin: Kirigami.Units.smallSpacing
+                Layout.preferredHeight: Math.round(Math.max(Kirigami.Units.gridUnit * 3.5,
+                    Math.min(Kirigami.Units.gridUnit * 7, width * card.aspect)))
+            }
+            PlasmaComponents3.Label {
+                visible: paneMap.visible
+                Layout.fillWidth: true
+                Layout.bottomMargin: Kirigami.Units.smallSpacing
+                horizontalAlignment: Text.AlignHCenter
+                text: i18n("Drag a pane (or a line below) to a side of another to rearrange the tab")
+                font: Kirigami.Theme.smallFont
+                opacity: 0.5
+                elide: Text.ElideRight
+            }
+
             Repeater {
                 model: card.open ? card.group.sessions.length : 0
                 delegate: SessionRow {
@@ -148,7 +191,12 @@ Rectangle {
                     deckRoot: card.deckRoot
                     dnd: card.dnd
                     showProject: card.mixedProjects
+                    lit: !!session.kitty_window && paneMap.hoveredWindow === session.kitty_window
                     Layout.fillWidth: true
+                    onHotChanged: {
+                        if (hot) card.rowHotWindow = session.kitty_window || -1
+                        else if (card.rowHotWindow === session.kitty_window) card.rowHotWindow = -1
+                    }
                 }
             }
         }
