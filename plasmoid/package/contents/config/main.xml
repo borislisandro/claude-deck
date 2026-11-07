@@ -29,16 +29,16 @@
       <default>true</default>
     </entry>
     <entry name="peekOnHover" type="Bool">
-      <label>Hovering a session shows its pane</label>
+      <label>Hovering a session on the island shows its pane</label>
       <default>true</default>
     </entry>
     <entry name="expandOnReturn" type="Bool">
       <label>Open the popup when you leave a fullscreen app and sessions are waiting</label>
       <default>true</default>
     </entry>
-    <entry name="showThumbnail" type="Bool">
-      <label>Live thumbnail of the deck window in the popup</label>
-      <default>true</default>
+    <entry name="menuButtonSide" type="String">
+      <label>Which end of the island holds the popup button: "left" or "right"</label>
+      <default>right</default>
     </entry>
     <entry name="colorWorking" type="String"><default>#5fbf7a</default></entry>
     <entry name="colorNeedsYou" type="String"><default>#f5a524</default></entry>

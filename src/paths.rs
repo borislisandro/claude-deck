@@ -18,6 +18,11 @@ pub fn daemon_socket() -> PathBuf {
     runtime_dir().join("daemon.sock")
 }
 
+/// The usage windows the daemon remembers, so a restart keeps waiting for the reset.
+pub fn usage_file() -> PathBuf {
+    runtime_dir().join("usage.json")
+}
+
 pub fn kitty_socket() -> PathBuf {
     runtime_dir().join("kitty.sock")
 }

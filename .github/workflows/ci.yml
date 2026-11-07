@@ -11,11 +11,24 @@ jobs:
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
+      # Unit tests, plus tests/cli.rs: a real daemon (--demo, no kitty) driven through the CLI.
       - run: cargo test --locked
-      - run: cargo clippy --locked -- -D warnings
+      - run: cargo clippy --locked --all-targets -- -D warnings
   kitty-assets:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - run: python3 -m py_compile src/assets/kitty/*.py
+      # The watcher, tab bar and kitten, against fake kitty objects.
+      - run: python3 -W error::ResourceWarning -m unittest discover -s tests/python -v
+  widget:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
       - run: python3 -c "import json; json.load(open('plasmoid/package/metadata.json'))"
+      - run: python3 -c "import xml.dom.minidom as m; m.parse('plasmoid/package/contents/config/main.xml')"
+      # The widget's logic (contents/ui/logic.js).
+      - run: node --test plasmoid/tests/*.test.mjs

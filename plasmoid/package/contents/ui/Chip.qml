@@ -21,6 +21,9 @@ Rectangle {
     PlasmaComponents3.Label {
         id: label
         anchors.centerIn: parent
+        // Squeezed by its layout, the text elides instead of spilling out.
+        width: Math.min(implicitWidth, chip.width - Kirigami.Units.largeSpacing)
+        elide: Text.ElideRight
         text: chip.text
         font: Kirigami.Theme.smallFont
         opacity: 0.85

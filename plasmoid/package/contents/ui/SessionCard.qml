@@ -1,5 +1,7 @@
 /*
- * A session in the popup: everything about it, plus quick actions.
+ * A deck tab holding one session. Folded (the default): its state in two lines.
+ * Open (the arrow): Claude's latest message, a prompt box and the actions.
+ * A click anywhere else on the card opens the session; a drag moves it.
  */
 import QtQuick
 import QtQuick.Layouts
@@ -11,10 +13,15 @@ Rectangle {
 
     required property var session
     required property var deckRoot
+    /// The popup's drag controller.
+    property var dnd: null
 
     readonly property color tint: deckRoot.statusColor(session.status, session.seen)
-    readonly property string tail: deckRoot.tails[session.sid] || ""
     readonly property bool hot: hover.hovered
+    readonly property bool open: deckRoot.isOpen(session.sid)
+    readonly property bool busy: session.status === "working" || session.status === "needs_you"
+    readonly property string activity: session.error ? "⚠ " + session.error
+        : (session.last_action || (session.last_prompt ? "“" + session.last_prompt + "”" : ""))
 
     implicitHeight: col.implicitHeight + Kirigami.Units.largeSpacing * 2
     radius: Kirigami.Units.cornerRadius * 2
@@ -29,10 +36,13 @@ Rectangle {
 
     HoverHandler {
         id: hover
-        onHoveredChanged: hovered ? card.deckRoot.requestPeek(card.session.sid) : card.deckRoot.requestUnpeek()
     }
 
-    TapHandler {
+    // Click opens; drag moves the session beside another pane.
+    DragGrip {
+        anchors.fill: parent
+        dnd: card.dnd
+        session: card.session
         onTapped: card.deckRoot.activate(card.session.sid)
     }
 
@@ -49,9 +59,12 @@ Rectangle {
 
     ColumnLayout {
         id: col
-        anchors.fill: parent
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: parent.top
         anchors.margins: Kirigami.Units.largeSpacing
         anchors.leftMargin: Kirigami.Units.largeSpacing + 4
+        anchors.rightMargin: Kirigami.Units.smallSpacing
         spacing: Kirigami.Units.smallSpacing
 
         RowLayout {
@@ -81,14 +94,6 @@ Rectangle {
                 elide: Text.ElideRight
                 Layout.fillWidth: true
             }
-            Chip {
-                text: card.session.branch ? "⎇ " + card.session.branch : ""
-            }
-            Chip {
-                text: card.session.model || ""
-                tint: "#d97757"
-                strength: 0.16
-            }
             PlasmaComponents3.Label {
                 text: card.deckRoot.statusLabel(card.session.status)
                 color: card.tint
@@ -99,75 +104,51 @@ Rectangle {
                 opacity: 0.6
                 font.features: { "tnum": 1 }
             }
-        }
-
-        PlasmaComponents3.Label {
-            visible: text.length > 0
-            text: card.session.error ? "⚠ " + card.session.error : (card.session.last_action || "")
-            color: card.session.error ? card.tint : Kirigami.Theme.textColor
-            elide: Text.ElideRight
-            Layout.fillWidth: true
-        }
-
-        PlasmaComponents3.Label {
-            visible: !!card.session.last_prompt
-            text: "“" + (card.session.last_prompt || "") + "”"
-            font.italic: true
-            opacity: 0.65
-            elide: Text.ElideRight
-            Layout.fillWidth: true
-        }
-
-        Rectangle {
-            visible: card.tail.length > 0
-            Layout.fillWidth: true
-            implicitHeight: tailText.implicitHeight + Kirigami.Units.smallSpacing * 2
-            radius: Kirigami.Units.cornerRadius
-            color: Qt.rgba(0, 0, 0, 0.32)
-            clip: true
-            PlasmaComponents3.Label {
-                id: tailText
-                anchors.fill: parent
-                anchors.margins: Kirigami.Units.smallSpacing
-                text: card.tail
-                font.family: "monospace"
-                font.pointSize: Kirigami.Theme.smallFont.pointSize
-                color: "#e8dfe0"
-                textFormat: Text.PlainText
-                wrapMode: Text.NoWrap
-                elide: Text.ElideRight
-                maximumLineCount: 6
-            }
-        }
-
-        RowLayout {
-            Layout.fillWidth: true
-            spacing: 0
-            opacity: card.hot ? 1 : 0.55
-            Behavior on opacity { NumberAnimation { duration: 120 } }
-
-            PlasmaComponents3.ToolButton {
-                icon.name: "go-jump-symbolic"
-                text: i18n("Open")
-                onClicked: card.deckRoot.activate(card.session.sid)
-            }
-            PlasmaComponents3.ToolButton {
-                visible: card.session.status === "working" || card.session.status === "needs_you"
-                icon.name: "media-playback-stop-symbolic"
-                text: i18n("Interrupt")
-                onClicked: card.deckRoot.run("interrupt " + card.deckRoot.shellQuote(card.session.sid))
-            }
-            PlasmaComponents3.ToolButton {
-                visible: !card.session.seen
-                icon.name: "checkmark-symbolic"
-                text: i18n("Mark seen")
-                onClicked: card.deckRoot.run("ack " + card.deckRoot.shellQuote(card.session.sid))
-            }
-            Item { Layout.fillWidth: true }
             ConfirmButton {
                 tip: i18n("Close this session")
-                needsConfirm: card.session.status === "working" || card.session.status === "needs_you"
+                needsConfirm: card.busy
+                opacity: card.hot || armed ? 1 : 0.35
                 onConfirmed: card.deckRoot.closeSession(card.session.sid)
+            }
+            FoldButton {
+                open: card.open
+                openText: i18n("Hide the latest message")
+                closedText: i18n("Show the latest message and a prompt box")
+                onClicked: card.deckRoot.toggleOpen(card.session.sid)
+            }
+        }
+
+        // What it's doing, and where.
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: Kirigami.Units.smallSpacing
+            visible: card.activity.length > 0 || !!card.session.branch || !!card.session.model
+
+            PlasmaComponents3.Label {
+                text: card.activity
+                color: card.session.error ? card.tint : Kirigami.Theme.textColor
+                opacity: card.session.error ? 1 : 0.75
+                elide: Text.ElideRight
+                Layout.fillWidth: true
+            }
+            Chip {
+                text: card.session.branch ? "⎇ " + card.session.branch : ""
+                Layout.maximumWidth: Kirigami.Units.gridUnit * 8
+            }
+            Chip {
+                text: card.session.model || ""
+                tint: "#d97757"
+                strength: 0.16
+            }
+        }
+
+        Loader {
+            Layout.fillWidth: true
+            active: card.open
+            visible: active
+            sourceComponent: SessionDetail {
+                session: card.session
+                deckRoot: card.deckRoot
             }
         }
     }

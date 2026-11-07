@@ -1,2 +1,4 @@
 /target
 *.png
+__pycache__/
+*.pyc

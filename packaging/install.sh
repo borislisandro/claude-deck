@@ -19,7 +19,7 @@ if [[ "${1:-}" == "--uninstall" ]]; then
     "$BIN" quit 2>/dev/null || true
     kpackagetool6 -t Plasma/Applet -r "$WIDGET_ID" 2>/dev/null || true
     rm -f "$BIN" "$APPS/claude-deck.desktop" "$HOME/.local/share/kglobalaccel/claude-deck.desktop" \
-          "$HOME/.local/share/icons/hicolor/scalable/apps/claude-deck.svg"
+          "$HOME/.local/share/icons/hicolor/scalable/apps/claudedeck.svg" "$HOME/.local/share/icons/hicolor/scalable/apps/claude-deck.svg"
     rm -rf "$HOME/.local/share/claude-deck"
     say "Uninstalled. Your saved workspace is kept in ~/.local/state/claude-deck."
     exit 0
@@ -44,8 +44,10 @@ else
     kpackagetool6 -t Plasma/Applet -i plasmoid/package >/dev/null
 fi
 
+# The icon name has no dash on purpose: KDE trims "claude-deck" to "claude" when a theme lacks it,
+# which picks up a theme's Anthropic logo instead of ours.
 say "Installing the launcher and global shortcuts (Meta+C, Meta+Shift+C)"
-install -Dm644 packaging/claude-deck.svg "$HOME/.local/share/icons/hicolor/scalable/apps/claude-deck.svg"
+install -Dm644 packaging/claude-deck.svg "$HOME/.local/share/icons/hicolor/scalable/apps/claudedeck.svg"
 mkdir -p "$APPS" "$HOME/.local/share/kglobalaccel"
 sed "s|@BIN@|$BIN|g" packaging/claude-deck.desktop > "$APPS/claude-deck.desktop"
 ln -sf "$APPS/claude-deck.desktop" "$HOME/.local/share/kglobalaccel/claude-deck.desktop"

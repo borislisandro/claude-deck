@@ -13,7 +13,7 @@ KCM.SimpleKCM {
     property alias cfg_ownBackground: ownBackground.checked
     property alias cfg_peekOnHover: peekOnHover.checked
     property alias cfg_expandOnReturn: expandOnReturn.checked
-    property alias cfg_showThumbnail: showThumbnail.checked
+    property string cfg_menuButtonSide
     property alias cfg_colorWorking: colorWorking.text
     property alias cfg_colorNeedsYou: colorNeedsYou.text
     property alias cfg_colorYourTurn: colorYourTurn.text
@@ -23,15 +23,11 @@ KCM.SimpleKCM {
         QQC2.CheckBox {
             id: peekOnHover
             Kirigami.FormData.label: i18n("Behavior:")
-            text: i18n("Hovering a session shows its pane")
+            text: i18n("Hovering a session on the island shows its pane")
         }
         QQC2.CheckBox {
             id: expandOnReturn
             text: i18n("After a fullscreen app closes, open the popup if sessions are waiting")
-        }
-        QQC2.CheckBox {
-            id: showThumbnail
-            text: i18n("Live thumbnail of the deck in the popup")
         }
 
         Item { Kirigami.FormData.isSection: true }
@@ -52,6 +48,12 @@ KCM.SimpleKCM {
         QQC2.CheckBox {
             id: ownBackground
             text: i18n("Draw the island background (off: let Panel Colorizer style it)")
+        }
+        QQC2.ComboBox {
+            Kirigami.FormData.label: i18n("Session list button:")
+            model: [i18n("Right end of the island"), i18n("Left end of the island")]
+            currentIndex: cfg_menuButtonSide === "left" ? 1 : 0
+            onActivated: index => cfg_menuButtonSide = index === 1 ? "left" : "right"
         }
         QQC2.SpinBox {
             id: collapseAfter

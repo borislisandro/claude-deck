@@ -36,9 +36,11 @@ def _state() -> dict:
 
 
 def _key(s: dict) -> str:
-    if s.get('status') == 'your_turn' and s.get('seen'):
+    status = s.get('status')
+    if status == 'your_turn' and s.get('seen'):
         return 'your_turn_seen'
-    return s.get('status', 'exited')
+    # A status this file doesn't know (a newer daemon) must not break the title.
+    return status if status in COLORS else 'exited'
 
 
 def _elapsed(ms: int) -> str:

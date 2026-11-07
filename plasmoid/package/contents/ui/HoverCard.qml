@@ -6,6 +6,7 @@ import QtQuick
 import QtQuick.Layouts
 import org.kde.plasma.components as PlasmaComponents3
 import org.kde.kirigami as Kirigami
+import "logic.js" as Logic
 
 Item {
     id: card
@@ -17,7 +18,8 @@ Item {
     readonly property bool isGroup: groupSessions.length > 1
 
     readonly property color tint: deckRoot.statusColor(session.status, session.seen)
-    readonly property string tail: deckRoot.tails[session.sid] || ""
+    /// The end of Claude's latest message (nothing before it has said anything).
+    readonly property string tail: Logic.lastLines(deckRoot.replies[session.sid] || "", 6)
 
     implicitWidth: Kirigami.Units.gridUnit * 24
     implicitHeight: col.implicitHeight + Kirigami.Units.largeSpacing * 2
@@ -132,7 +134,7 @@ Item {
             Layout.topMargin: Kirigami.Units.smallSpacing
             implicitHeight: tailText.implicitHeight + Kirigami.Units.smallSpacing * 2
             radius: Kirigami.Units.cornerRadius
-            color: Qt.rgba(0, 0, 0, 0.35)
+            color: Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.05)
             border.width: 1
             border.color: Qt.rgba(card.tint.r, card.tint.g, card.tint.b, 0.35)
 
@@ -141,11 +143,9 @@ Item {
                 anchors.fill: parent
                 anchors.margins: Kirigami.Units.smallSpacing
                 text: card.tail
-                font.family: "monospace"
-                font.pointSize: Kirigami.Theme.smallFont.pointSize
-                color: "#e8dfe0"
+                font: Kirigami.Theme.smallFont
                 textFormat: Text.PlainText
-                wrapMode: Text.NoWrap
+                wrapMode: Text.Wrap
                 elide: Text.ElideRight
                 maximumLineCount: 8
             }

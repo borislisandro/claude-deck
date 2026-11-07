@@ -31,6 +31,43 @@ def _active_window_of(boss):
     return tm.active_tab.active_window
 
 
+def _even_splits(tab) -> None:
+    """Lay the tab's panes out as near-square columns of equal size, in the splits layout."""
+    import math
+    from kitty.layout.splits import Pair
+
+    tab.goto_layout('splits')
+    layout = tab.current_layout
+    if layout.name != 'splits':
+        raise RuntimeError('no splits layout')
+    ids = [g.id for g in tab.windows.iter_all_layoutable_groups()]
+    if len(ids) < 2:
+        return
+    cols = math.ceil(math.sqrt(len(ids)))
+    per, extra = divmod(len(ids), cols)
+    columns, i = [], 0
+    for c in range(cols):
+        n = per + (1 if c < extra else 0)
+        columns.append(ids[i:i + n])
+        i += n
+
+    def chain(items, horizontal):
+        # Each pair gives its first child 1/len of the room, so all get the same share.
+        if len(items) == 1:
+            return items[0]
+        p = Pair(horizontal=horizontal)
+        p.one = items[0]
+        p.two = chain(items[1:], horizontal)
+        p.bias = 1 / len(items)
+        return p
+
+    root = chain([chain(col, False) for col in columns if col], True)
+    if not isinstance(root, Pair):
+        return
+    layout.pairs_root = root
+    tab.relayout()
+
+
 @result_handler(no_ui=True)
 def handle_result(args: list[str], answer, target_window_id: int, boss):
     cmd, rest = (args[1], args[2:]) if len(args) > 1 else ('', [])
@@ -73,28 +110,117 @@ def handle_result(args: list[str], answer, target_window_id: int, boss):
             w = win(i)
             if w is not None and w.tabref() is not target:
                 boss._move_window_to(window=w, target_tab_id=target.id)
-        target.goto_layout('grid')
+        # An even grid built as splits, so panes can later be dropped beside each
+        # other from the panel without the tab rearranging itself.
+        try:
+            _even_splits(target)
+        except Exception:
+            target.goto_layout('grid')
         return 'ok'
 
     if cmd == 'untile':
+        # Every tab with several session panes keeps one (its active pane) and
+        # spreads the rest into tabs of their own.
         tm = boss.active_tab_manager
         if tm is None or tm.active_tab is None:
             return 'none'
-        tab = tm.active_tab
+        current = tm.active_tab
         ids = set(int(x) for x in rest)
-        keep = tab.active_window
-        for w in list(tab):
-            if w is not keep and w.id in ids:
-                boss._move_window_to(window=w, target_tab_id='new')
-        tm.set_active_tab(tab)
+        for tab in list(boss.all_tabs):
+            keep = tab.active_window
+            for w in list(tab):
+                if w is not keep and w.id in ids:
+                    boss._move_window_to(window=w, target_tab_id='new')
+        current.make_active()
         return 'ok'
 
-    if cmd == 'close':
+    if cmd == 'place':
+        # Move a pane next to another (left/right/top/bottom of it), or into a tab of its own.
         w = win(rest[0])
         if w is None:
             return 'missing'
-        working = len(rest) > 1 and rest[1] == 'working'
-        if not working:
+        src = w.tabref()
+        if rest[1] == 'tab':
+            if src is not None and len(list(src.windows.iter_all_layoutable_groups())) > 1:
+                boss._move_window_to(window=w, target_tab_id='new')
+            return 'ok'
+        dest = win(rest[1])
+        side = rest[2] if len(rest) > 2 else 'right'
+        if dest is None or dest is w or side not in ('left', 'right', 'top', 'bottom'):
+            return 'missing'
+        tab = dest.tabref()
+        if tab is None:
+            return 'missing'
+        # Only the splits layout can put a pane on a chosen side of another.
+        if tab.current_layout.name != 'splits':
+            tab.goto_layout('splits')
+        if hasattr(boss, '_insert_window_in_direction'):
+            boss._insert_window_in_direction(w, dest, side)
+        else:
+            # Older kitty: land in the tab, then split next to dest.
+            if src is not tab:
+                boss._move_window_to(window=w, target_tab_id=tab.id)
+            layout = tab.current_layout
+            if hasattr(layout, 'insert_window_next_to'):
+                layout.insert_window_next_to(tab.windows, w, dest, side in ('left', 'right'), side in ('right', 'bottom'))
+                tab.relayout()
+        return 'ok'
+
+    if cmd == 'panes':
+        # Every tab's panes with their place in the tab, from 0 to 1: the popup's drop map.
+        tabs = []
+        for tm in boss.all_tab_managers:
+            for t in tm:
+                ids = []
+                for g in t.windows.iter_all_layoutable_groups():
+                    w = boss.window_id_map.get(g.main_window_id)
+                    if w is not None:
+                        ids.append(w)
+                if not ids:
+                    continue
+                layout = t.current_layout.name
+                panes = []
+                if layout == 'stack' and len(ids) > 1:
+                    # Zoomed: every pane has the same geometry; draw them as columns.
+                    for i, w in enumerate(ids):
+                        panes.append({'window': w.id, 'x': i / len(ids), 'y': 0, 'w': 1 / len(ids), 'h': 1})
+                else:
+                    left = min(w.geometry.left for w in ids)
+                    top = min(w.geometry.top for w in ids)
+                    width = max(1, max(w.geometry.right for w in ids) - left)
+                    height = max(1, max(w.geometry.bottom for w in ids) - top)
+                    for w in ids:
+                        g = w.geometry
+                        panes.append({
+                            'window': w.id,
+                            'x': (g.left - left) / width, 'y': (g.top - top) / height,
+                            'w': (g.right - g.left) / width, 'h': (g.bottom - g.top) / height,
+                        })
+                tabs.append({'tab': t.id, 'layout': layout, 'panes': panes})
+        return json.dumps(tabs)
+
+    if cmd == 'untile-tab':
+        # Spread one tab's panes into tabs of their own (the first pane keeps the tab).
+        tab = next((t for t in boss.all_tabs if t.id == int(rest[0])), None)
+        if tab is None:
+            return 'missing'
+        groups = list(tab.windows.iter_all_layoutable_groups())
+        for g in groups[1:]:
+            w = boss.window_id_map.get(g.main_window_id)
+            if w is not None:
+                boss._move_window_to(window=w, target_tab_id='new')
+        return 'ok'
+
+    if cmd == 'close':
+        # close <window> <idle|working|ask|ask-working> [name]
+        # idle: close now. working: ask, Claude is busy. ask / ask-working: always ask
+        # (the F7 key), Enter closes and Esc keeps the pane.
+        w = win(rest[0])
+        if w is None:
+            return 'missing'
+        mode = rest[1] if len(rest) > 1 else 'idle'
+        name = rest[2] if len(rest) > 2 else ''
+        if mode == 'idle':
             boss.mark_window_for_close(w)
             return 'ok'
 
@@ -103,7 +229,13 @@ def handle_result(args: list[str], answer, target_window_id: int, boss):
             if confirmed and x is not None:
                 boss.mark_window_for_close(x)
 
-        boss.confirm('Claude is still working in this pane.\nClose it anyway?', done, w.id, window=w, title='Close session')
+        what = f'session {name}' if name else 'this pane'
+        if mode in ('working', 'ask-working'):
+            msg = f'Claude is still working in {what}.\nClose it anyway?'
+        else:
+            msg = f'Close {what}?'
+        msg += '\n\nEnter closes it, Esc keeps it.'
+        boss.confirm(msg, done, w.id, window=w, title='Close session')
         return 'ok'
 
     if cmd == 'layout':

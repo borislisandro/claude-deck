@@ -12,12 +12,12 @@ _timer = {'started': False, 'mtime': 0.0, 'ticks': 0}
 
 
 def _send(msg: dict) -> None:
+    # Runs on kitty's UI thread: a short timeout, and never an exception.
     try:
-        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        s.settimeout(0.1)
-        s.connect(_SOCK)
-        s.sendall((json.dumps(msg) + '\n').encode())
-        s.close()
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
+            s.settimeout(0.1)
+            s.connect(_SOCK)
+            s.sendall((json.dumps(msg) + '\n').encode())
     except OSError:
         pass
 

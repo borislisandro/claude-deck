@@ -54,30 +54,51 @@ pub fn find_claude() -> PathBuf {
     PathBuf::from("claude")
 }
 
+#[derive(Debug, PartialEq)]
 enum Next {
     Resume,
     Fresh,
     Close,
 }
 
-fn menu(code: Option<i32>) -> Next {
-    use ratatui::crossterm::event::{Event, KeyCode, KeyEvent, read};
-    use ratatui::crossterm::terminal;
-    let why = match code {
+/// What a key does in the exit menu. Closing loses the pane, so only `q` closes:
+/// Enter (typing into a Claude that just crashed) and Esc (meant as "interrupt")
+/// arrive by habit and must not throw the session away.
+fn menu_choice(key: ratatui::crossterm::event::KeyCode) -> Option<Next> {
+    use ratatui::crossterm::event::KeyCode;
+    match key {
+        KeyCode::Char('r' | 'R') | KeyCode::Enter => Some(Next::Resume),
+        KeyCode::Char('n' | 'N') => Some(Next::Fresh),
+        KeyCode::Char('q' | 'Q') => Some(Next::Close),
+        _ => None,
+    }
+}
+
+fn exit_reason(code: Option<i32>) -> String {
+    match code {
         Some(0) => "Claude exited.".to_string(),
+        Some(127) => "Claude could not be started (is `claude` installed and on your PATH?).".to_string(),
         Some(c) => format!("Claude exited with code {c}."),
         None => "Claude was stopped by a signal.".to_string(),
-    };
-    print!("\r\n\x1b[2m────────────────────────────────────────\x1b[0m\r\n  {why}\r\n\r\n  \x1b[1m[r]\x1b[0m resume this conversation   \x1b[1m[n]\x1b[0m start a new one   \x1b[1m[q]\x1b[0m close the pane\r\n");
+    }
+}
+
+fn menu(code: Option<i32>) -> Next {
+    use ratatui::crossterm::event::{Event, KeyEvent, KeyEventKind, read};
+    use ratatui::crossterm::terminal;
+    let why = exit_reason(code);
+    print!("\r\n\x1b[2m────────────────────────────────────────\x1b[0m\r\n  {why}\r\n\r\n  \x1b[1m[r]\x1b[0m or \x1b[1mEnter\x1b[0m resume this conversation   \x1b[1m[n]\x1b[0m start a new one   \x1b[1m[q]\x1b[0m close the pane\r\n");
     let _ = std::io::stdout().flush();
     if terminal::enable_raw_mode().is_err() {
         return Next::Close;
     }
     let next = loop {
         match read() {
-            Ok(Event::Key(KeyEvent { code: KeyCode::Char('r'), .. })) => break Next::Resume,
-            Ok(Event::Key(KeyEvent { code: KeyCode::Char('n'), .. })) => break Next::Fresh,
-            Ok(Event::Key(KeyEvent { code: KeyCode::Char('q') | KeyCode::Enter | KeyCode::Esc, .. })) => break Next::Close,
+            Ok(Event::Key(KeyEvent { code, kind: KeyEventKind::Press, .. })) => {
+                if let Some(next) = menu_choice(code) {
+                    break next;
+                }
+            }
             Ok(_) => continue,
             Err(_) => break Next::Close,
         }
@@ -143,11 +164,44 @@ pub fn run(sid: Option<String>, resume: Option<String>, extra: Vec<String>) -> i
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use ratatui::crossterm::event::KeyCode;
+
     #[test]
     fn sid_is_a_v4_uuid() {
-        let s = super::new_sid();
+        let s = new_sid();
         assert_eq!(s.len(), 36);
         assert_eq!(&s[14..15], "4");
-        assert_ne!(s, super::new_sid());
+        assert!(matches!(&s[19..20], "8" | "9" | "a" | "b"), "RFC 4122 variant");
+        assert_eq!(s.matches('-').count(), 4);
+        assert_ne!(s, new_sid());
+    }
+
+    #[test]
+    fn only_q_closes_the_pane() {
+        assert_eq!(menu_choice(KeyCode::Char('r')), Some(Next::Resume));
+        assert_eq!(menu_choice(KeyCode::Enter), Some(Next::Resume));
+        assert_eq!(menu_choice(KeyCode::Char('n')), Some(Next::Fresh));
+        assert_eq!(menu_choice(KeyCode::Char('q')), Some(Next::Close));
+        assert_eq!(menu_choice(KeyCode::Char('Q')), Some(Next::Close));
+        for habit in [KeyCode::Esc, KeyCode::Char('c'), KeyCode::Up, KeyCode::Char(' ')] {
+            assert_eq!(menu_choice(habit), None, "{habit:?}");
+        }
+    }
+
+    #[test]
+    fn explains_why_claude_stopped() {
+        assert_eq!(exit_reason(Some(0)), "Claude exited.");
+        assert!(exit_reason(Some(127)).contains("could not be started"));
+        assert_eq!(exit_reason(Some(1)), "Claude exited with code 1.");
+        assert!(exit_reason(None).contains("signal"));
+    }
+
+    #[test]
+    fn parent_session_markers_are_claude_ones() {
+        // Stripping them must never touch the user's own environment.
+        for v in PARENT_SESSION_VARS {
+            assert!(v.starts_with("CLAUDE") || *v == "AI_AGENT", "{v}");
+        }
     }
 }

@@ -10,6 +10,7 @@ import org.kde.plasma.core as PlasmaCore
 import org.kde.plasma.plasma5support as P5Support
 import org.kde.kirigami as Kirigami
 import org.kde.taskmanager as TaskManager
+import "logic.js" as Logic
 
 PlasmoidItem {
     id: root
@@ -22,68 +23,95 @@ PlasmoidItem {
     readonly property string focusedSid: deck.focused_sid || ""
     property real now: Date.now()
 
-    /// Sessions grouped by deck tab, in on-screen order. Each group:
-    /// { key, tab, tabIndex, sessions, top (most urgent), counts, model, projects }
-    readonly property var groups: {
-        const out = []
-        const byKey = {}
-        for (const s of sessions) {
-            const key = (s.tab !== null && s.tab !== undefined) ? "t" + s.tab : "s" + s.sid
-            let g = byKey[key]
-            if (!g) {
-                g = { key: key, tab: s.tab, tabIndex: s.tab_index || (out.length + 1), sessions: [] }
-                byKey[key] = g
-                out.push(g)
-            }
-            g.sessions.push(s)
-        }
-        for (const g of out) {
-            g.top = g.sessions.slice().sort((a, b) => urgency(a) - urgency(b) || a.since - b.since)[0]
-            g.counts = { working: 0, needs_you: 0, your_turn: 0, exited: 0 }
-            for (const s of g.sessions) g.counts[s.status] = (g.counts[s.status] || 0) + 1
-            const models = [...new Set(g.sessions.map(s => s.model || ""))]
-            // A model for the whole tab only makes sense when every session agrees.
-            g.model = models.length === 1 ? models[0] : ""
-            g.projects = [...new Set(g.sessions.map(s => s.project))]
-            g.unseen = g.sessions.filter(s => !s.seen).length
-        }
-        return out
-    }
+    /// Stands in for a session in a delegate that is about to go away. Repeaters
+    /// are driven by counts (so delegates survive updates); when the count drops, a
+    /// delegate can see its index fall off the end for an instant.
+    readonly property var noSession: ({ sid: "", index: 0, status: "exited", seen: true, since: 0, project: "", cwd: "" })
+    readonly property var noGroup: ({ key: "", tab: null, tabIndex: 0, sessions: [], top: noSession,
+        counts: { working: 0, needs_you: 0, your_turn: 0, exited: 0 }, model: "", projects: [], unseen: 0 })
 
-    /// Lower is more urgent: what the island and groups show first.
+    /// Sessions grouped by deck tab, in on-screen order (see Logic.groupSessions).
+    readonly property var groups: Logic.groupSessions(sessions)
+
     function urgency(s) {
-        if (s.status === "needs_you") return s.seen ? 1 : 0
-        if (s.status === "your_turn") return s.seen ? 4 : 2
-        if (s.status === "working") return 3
-        return 5
+        return Logic.urgency(s)
     }
 
-    /// Tabs whose session list is folded in the popup (by group key).
-    property var foldedGroups: ({})
-    function toggleFold(key) {
-        const f = Object.assign({}, foldedGroups)
-        f[key] = !f[key]
-        foldedGroups = f
+    /// What is opened up in the popup: tab groups (by group key) and sessions (by
+    /// sid). Everything starts folded; this outlives the popup closing.
+    property var openKeys: ({})
+    function isOpen(key) {
+        return openKeys[key] === true
+    }
+    function toggleOpen(key) {
+        const o = Object.assign({}, openKeys)
+        if (o[key]) delete o[key]
+        else o[key] = true
+        openKeys = o
     }
 
-    /// Popup height in grid units, from what it will show.
-    readonly property real popupUnits: {
-        let u = 6 + (Plasmoid.configuration.showThumbnail ? 11 : 0)
-        for (const g of groups) {
-            u += g.sessions.length === 1 ? 11 : 3.5 + (foldedGroups[g.key] ? 0 : 2.3 * g.sessions.length)
-        }
-        return Math.min(46, Math.max(14, u))
+    /// Popup height in grid units for its first opening, before its content exists
+    /// to be measured.
+    readonly property real popupUnits: Logic.popupUnits(groups, openKeys)
+
+    /// sid -> the text of Claude's latest message ("" before it has said anything).
+    /// Fetched when a session is opened up in the popup or hovered on the island,
+    /// and again when it moves on.
+    property var replies: ({})
+    function fetchReply(sid) {
+        run("reply " + shellQuote(sid), (code, out) => {
+            if (code !== 0) return
+            const text = out.replace(/\s+$/, "")
+            if (replies[sid] === text) return
+            const r = Object.assign({}, replies)
+            r[sid] = text
+            replies = r
+        })
     }
-    /// sid -> last lines of its pane, fetched while hovering or while the popup is open.
-    property var tails: ({})
+
+    /// Type `text` into a session's prompt and submit it; `cb(exitCode, stdout, stderr)`.
+    function send(sid, text, cb) {
+        run("send " + shellQuote(sid) + " -- " + shellQuote(text), cb)
+    }
+
+    /// kitty tab id -> { layout, panes: [{ window, x, y, w, h }] } with x/y/w/h from 0
+    /// to 1 inside the tab: the popup draws these as drop zones while dragging.
+    property var paneTabs: ({})
+    function fetchPanes() {
+        run("panes", (code, out) => {
+            if (code !== 0) return
+            try {
+                const m = {}
+                for (const t of JSON.parse(out.trim())) m[t.tab] = t
+                root.paneTabs = m
+            } catch (e) {}
+        })
+    }
+
+    /// Move a session's pane beside another pane ("left" / "right" / "top" / "bottom"),
+    /// or, with no `nextTo`, into a tab of its own.
+    function place(sid, nextTo, side) {
+        const where = nextTo ? " --next-to " + nextTo + " --side " + side : ""
+        run("place " + shellQuote(sid) + where, afterPeek(() => fetchPanes()))
+    }
+
+    /// Spread one deck tab's sessions into tabs of their own.
+    function untileGroup(group) {
+        if (group.tab !== null && group.tab !== undefined) run("untile --tab " + group.tab, () => fetchPanes())
+    }
 
     // ---- The deck window, from the task manager ---------------------------
     property string deckUuid: ""
     property bool deckActive: false
     property bool wasFullscreen: false
+    /// When the fullscreen app we are waiting out came up (ms): the digest tells only
+    /// of what began waiting since.
+    property real fullscreenSince: 0
 
     // ---- Peek bookkeeping ---------------------------------------------------
     property string peekedSid: ""
+    /// A session is being dragged in the popup: no peeking at what the pointer crosses.
+    property bool dragging: false
 
     readonly property string bin: Plasmoid.configuration.binaryPath.length > 0
         ? shellQuote(Plasmoid.configuration.binaryPath)
@@ -92,7 +120,7 @@ PlasmoidItem {
     Plasmoid.status: !running ? PlasmaCore.Types.HiddenStatus
         : unseen > 0 ? PlasmaCore.Types.NeedsAttentionStatus
         : PlasmaCore.Types.ActiveStatus
-    Plasmoid.icon: "claude-deck"
+    Plasmoid.icon: "claudedeck"
     Plasmoid.title: "Claude Deck"
     toolTipMainText: "Claude Deck"
     toolTipSubText: running ? deck.summary : i18n("Not running")
@@ -110,6 +138,12 @@ PlasmoidItem {
             onTriggered: root.running ? root.run("new --pick") : root.run("toggle")
         },
         PlasmaCore.Action {
+            text: i18n("Show Sessions")
+            icon.name: "view-list-details-symbolic"
+            enabled: root.running
+            onTriggered: root.expanded = true
+        },
+        PlasmaCore.Action {
             text: i18n("Jump to Next Waiting")
             icon.name: "go-jump-symbolic"
             enabled: root.unseen > 0
@@ -120,6 +154,12 @@ PlasmoidItem {
             icon.name: "view-grid-symbolic"
             enabled: root.sessions.length > 1
             onTriggered: root.run("tile")
+        },
+        PlasmaCore.Action {
+            text: i18n("Spread Sessions into Tabs")
+            icon.name: "tab-detach-symbolic"
+            enabled: root.groups.length < root.sessions.length
+            onTriggered: root.run("untile")
         },
         PlasmaCore.Action {
             text: i18n("Restore Last Workspace")
@@ -164,11 +204,7 @@ PlasmoidItem {
     }
 
     function elapsed(since) {
-        const s = Math.max(0, Math.floor((now - since) / 1000))
-        if (s < 60) return s + "s"
-        if (s < 3600) return Math.floor(s / 60) + "m"
-        const m = Math.floor((s % 3600) / 60)
-        return Math.floor(s / 3600) + "h" + (m < 10 ? "0" : "") + m
+        return Logic.elapsed(now - since)
     }
 
     // ---- Running the CLI ----------------------------------------------------
@@ -176,10 +212,10 @@ PlasmoidItem {
     property var pending: ({})
 
     function shellQuote(s) {
-        return "'" + String(s).replace(/'/g, "'\\''") + "'"
+        return Logic.shellQuote(s)
     }
 
-    /// Run `claude-deck <args>`; `cb(exitCode, stdout)` when it finishes.
+    /// Run `claude-deck <args>`; `cb(exitCode, stdout, stderr)` when it finishes.
     function run(args, cb) {
         nonce += 1
         // The executable engine keys sources by command line; the comment keeps each unique.
@@ -196,26 +232,22 @@ PlasmoidItem {
             disconnectSource(source)
             const cb = root.pending[source]
             delete root.pending[source]
-            if (cb) cb(data["exit code"], data.stdout || "")
+            if (cb) cb(data["exit code"], data.stdout || "", data.stderr || "")
         }
     }
 
     function watch() {
         const since = running ? deck.rev : 0
         run("watch --once --since " + since, (code, out) => {
-            let next = null
-            try {
-                const lines = out.trim().split("\n")
-                next = JSON.parse(lines[lines.length - 1])
-            } catch (e) {
-                next = null
-            }
+            const next = Logic.parseWatch(out)
             if (next) {
                 const wasRunning = root.running
-                root.deck = next
+                // Only a real change is assigned: every assignment re-evaluates the
+                // whole island and popup.
+                if (Logic.stateChanged(root.deck, next)) root.deck = next
                 if (!next.running && wasRunning) {
                     root.expanded = false
-                    root.tails = ({})
+                    root.replies = ({})
                 }
                 watch()
             } else {
@@ -240,39 +272,48 @@ PlasmoidItem {
     Component.onCompleted: watch()
 
     // ---- Actions used by the representations -------------------------------
-    function activate(sid) {
+    /// Ends any peek for an action that replaces it (a click, a close, a drop), and
+    /// returns the action's callback. If a peek was asked for, an unpeek follows the
+    /// action: the `peek` command may still be on its way and land after the click,
+    /// and the daemon would then think you're still peeking (so looking at panes
+    /// wouldn't mark them seen) until the next click.
+    function afterPeek(cb) {
         unpeekTimer.stop()
+        const hadPeek = peekedSid.length > 0
         peekedSid = ""
+        if (!hadPeek) return cb || null
+        return (code, out) => {
+            run("unpeek")
+            if (cb) cb(code, out)
+        }
+    }
+
+    function activate(sid) {
         if (sid === focusedSid && deckActive) {
-            run("toggle")   // clicking the session you're in hides the deck
+            run("toggle", afterPeek())   // clicking the session you're in hides the deck
         } else {
-            run("activate " + shellQuote(sid))
+            run("activate " + shellQuote(sid), afterPeek())
         }
     }
 
     /// Close one session's pane without raising the deck (the popup stays open).
     /// The popup asks first when Claude is busy, so kitty doesn't have to.
     function closeSession(sid) {
-        if (peekedSid === sid) {
-            unpeekTimer.stop()
-            peekedSid = ""
-        }
-        run("close " + shellQuote(sid) + " --force")
+        run("close " + shellQuote(sid) + " --force", peekedSid === sid ? afterPeek() : null)
     }
 
     /// Close a whole deck tab and every session in it.
     function closeGroup(group) {
-        unpeekTimer.stop()
-        peekedSid = ""
+        const done = afterPeek()
         if (group.tab !== null && group.tab !== undefined) {
-            run("close-tab " + group.tab)
+            run("close-tab " + group.tab, done)
         } else {
-            for (const s of group.sessions) run("close " + shellQuote(s.sid) + " --force")
+            for (const s of group.sessions) run("close " + shellQuote(s.sid) + " --force", done)
         }
     }
 
     function requestPeek(sid) {
-        if (!Plasmoid.configuration.peekOnHover || deckActive) {
+        if (!Plasmoid.configuration.peekOnHover || deckActive || dragging) {
             return
         }
         unpeekTimer.stop()
@@ -299,36 +340,33 @@ PlasmoidItem {
         }
     }
 
-    function fetchTail(sid, lines) {
-        run("tail " + shellQuote(sid) + " --lines " + (lines || 6), (code, out) => {
-            if (code !== 0) return
-            const t = Object.assign({}, root.tails)
-            t[sid] = out.replace(/\s+$/, "")
-            root.tails = t
-        })
-    }
-
     /// Scroll on the island: focus the next/previous session.
     function cycle(step) {
-        if (sessions.length === 0) return
-        let i = sessions.findIndex(s => s.sid === focusedSid)
-        i = i < 0 ? 0 : (i + step + sessions.length) % sessions.length
-        run("activate " + shellQuote(sessions[i].sid))
+        const i = Logic.cycleIndex(sessions, focusedSid, step)
+        if (i >= 0) run("activate " + shellQuote(sessions[i].sid))
     }
 
-    onExpandedChanged: {
-        if (root.expanded) {
-            for (const s of sessions) fetchTail(s.sid, 6)
-        }
-    }
+    // The drop map's panes: fresh when the popup opens and when a drag starts.
+    onExpandedChanged: if (root.expanded) fetchPanes()
 
-    Timer {
-        interval: 2500
-        repeat: true
-        running: root.expanded && root.running
-        onTriggered: {
-            for (const s of root.sessions) root.fetchTail(s.sid, 6)
+    /// Forget opened-up and fetched state of sessions that are gone.
+    onSessionsChanged: {
+        const live = {}
+        for (const s of sessions) {
+            live[s.sid] = true
+            live[Logic.groupKey(s)] = true
         }
+        const prune = m => {
+            const out = {}
+            let dropped = false
+            for (const k in m) {
+                if (live[k]) out[k] = m[k]
+                else dropped = true
+            }
+            return dropped ? out : m
+        }
+        openKeys = prune(openKeys)
+        replies = prune(replies)
     }
 
     // ---- Finding the deck window; noticing the end of a fullscreen game ----
@@ -365,10 +403,13 @@ PlasmoidItem {
         }
         deckUuid = uuid
         deckActive = active
-        const fs = tasks.data(tasks.activeTask, TaskManager.AbstractTasksModel.IsFullScreen) === true
+        // The deck itself going fullscreen is not being away from it.
+        const fs = !active && tasks.data(tasks.activeTask, TaskManager.AbstractTasksModel.IsFullScreen) === true
+        if (fs && !wasFullscreen) fullscreenSince = Date.now()
         if (wasFullscreen && !fs && running && unseen > 0) {
-            // Back from a game: Plasma held the notifications, so say it now.
-            run("digest")
+            // Back from a game: Plasma held the notifications, so say it now, for what
+            // began waiting meanwhile (not for what has been red since this morning).
+            run("digest --since " + Math.floor(fullscreenSince))
             if (Plasmoid.configuration.expandOnReturn) root.expanded = true
         }
         wasFullscreen = fs

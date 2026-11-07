@@ -18,6 +18,9 @@ PlasmaCore.ToolTipArea {
     property int px: 2
     /// When this icon stands for a whole deck tab: every session in it.
     property var groupSessions: []
+    /// Click room beyond the icon: half the gap to each neighbor, and the panel's height.
+    property real hitPadX: 0
+    property real hitPadY: 0
     property int tabIndex: 0
     readonly property int count: groupSessions.length
 
@@ -45,7 +48,7 @@ PlasmaCore.ToolTipArea {
 
     onContainsMouseChanged: {
         if (containsMouse) {
-            deckRoot.fetchTail(session.sid, 8)
+            deckRoot.fetchReply(session.sid)
             peekDelay.restart()
         } else {
             peekDelay.stop()
@@ -145,6 +148,10 @@ PlasmaCore.ToolTipArea {
 
     MouseArea {
         anchors.fill: parent
+        anchors.leftMargin: -item.hitPadX
+        anchors.rightMargin: -item.hitPadX
+        anchors.topMargin: -item.hitPadY
+        anchors.bottomMargin: -item.hitPadY
         acceptedButtons: Qt.LeftButton
         cursorShape: Qt.PointingHandCursor
         onClicked: item.deckRoot.activate(item.session.sid)

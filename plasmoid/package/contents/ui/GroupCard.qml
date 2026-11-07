@@ -1,5 +1,7 @@
 /*
- * A deck tab holding several sessions: one header for the tab, one row per session.
+ * A deck tab holding several sessions: one header for the tab and, once opened
+ * (folded is the default), one row per session. A click on the header opens or
+ * folds it; each row opens the session it shows.
  */
 import QtQuick
 import QtQuick.Layouts
@@ -11,10 +13,12 @@ Rectangle {
 
     required property var group
     required property var deckRoot
+    /// The popup's drag controller, handed to each row.
+    property var dnd: null
 
     readonly property var lead: group.top
     readonly property color tint: deckRoot.statusColor(lead.status, lead.seen)
-    readonly property bool folded: deckRoot.foldedGroups[group.key] === true
+    readonly property bool open: deckRoot.isOpen(group.key)
     readonly property bool anyBusy: group.counts.working + group.counts.needs_you > 0
     readonly property bool mixedProjects: group.projects.length > 1
 
@@ -36,6 +40,16 @@ Rectangle {
         color: card.tint
     }
 
+    // A click on the header (not its buttons, which sit above) opens or folds the tab.
+    MouseArea {
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: parent.top
+        height: col.y + headerRow.y + headerRow.height + Kirigami.Units.smallSpacing
+        cursorShape: Qt.PointingHandCursor
+        onClicked: card.deckRoot.toggleOpen(card.group.key)
+    }
+
     ColumnLayout {
         id: col
         anchors.fill: parent
@@ -44,6 +58,7 @@ Rectangle {
         spacing: 2
 
         RowLayout {
+            id: headerRow
             Layout.fillWidth: true
             spacing: Kirigami.Units.smallSpacing
 
@@ -81,10 +96,10 @@ Rectangle {
                 strength: 0.16
             }
             PlasmaComponents3.ToolButton {
-                icon.name: "go-jump-symbolic"
+                icon.name: "tab-detach-symbolic"
                 display: PlasmaComponents3.AbstractButton.IconOnly
-                text: i18n("Open the most urgent session in this tab")
-                onClicked: card.deckRoot.activate(card.lead.sid)
+                text: i18n("Spread these sessions into tabs of their own")
+                onClicked: card.deckRoot.untileGroup(card.group)
                 PlasmaComponents3.ToolTip.text: text
                 PlasmaComponents3.ToolTip.visible: hovered
             }
@@ -94,22 +109,21 @@ Rectangle {
                 confirmText: i18n("Close %1?", card.group.sessions.length)
                 onConfirmed: card.deckRoot.closeGroup(card.group)
             }
-            PlasmaComponents3.ToolButton {
-                icon.name: card.folded ? "arrow-down-symbolic" : "arrow-up-symbolic"
-                display: PlasmaComponents3.AbstractButton.IconOnly
-                text: card.folded ? i18n("Show sessions") : i18n("Hide sessions")
-                onClicked: card.deckRoot.toggleFold(card.group.key)
-                PlasmaComponents3.ToolTip.text: text
-                PlasmaComponents3.ToolTip.visible: hovered
+            FoldButton {
+                open: card.open
+                openText: i18n("Hide sessions")
+                closedText: i18n("Show the %1 sessions", card.group.sessions.length)
+                onClicked: card.deckRoot.toggleOpen(card.group.key)
             }
         }
 
         Repeater {
-            model: card.folded ? [] : card.group.sessions
+            model: card.open ? card.group.sessions.length : 0
             delegate: SessionRow {
-                required property var modelData
-                session: modelData
+                required property int index
+                session: card.group.sessions[index] || card.deckRoot.noSession
                 deckRoot: card.deckRoot
+                dnd: card.dnd
                 showProject: card.mixedProjects
                 Layout.fillWidth: true
             }

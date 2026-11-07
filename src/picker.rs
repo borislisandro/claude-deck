@@ -76,9 +76,9 @@ pub fn fuzzy(query: &str, text: &str) -> Option<i64> {
 }
 
 /// Claude's own project-folder naming: every non-alphanumeric char becomes '-'.
-fn claude_project_dir(path: &str) -> PathBuf {
+fn claude_project_dir(home: &Path, path: &str) -> PathBuf {
     let enc: String = path.chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '-' }).collect();
-    paths::home().join(".claude/projects").join(enc)
+    home.join(".claude/projects").join(enc)
 }
 
 fn mtime(p: &Path) -> SystemTime {
@@ -88,9 +88,14 @@ fn mtime(p: &Path) -> SystemTime {
 /// Projects Claude has been used in (most recent first), then the folders under
 /// the configured project roots.
 pub fn projects(cfg: &Config) -> Vec<(String, bool)> {
-    let home = paths::home().display().to_string();
+    projects_in(&paths::home(), cfg)
+}
+
+/// `projects` for a given home folder. Each entry: (path, used with Claude recently).
+pub fn projects_in(home_dir: &Path, cfg: &Config) -> Vec<(String, bool)> {
+    let home = home_dir.display().to_string();
     let mut recent: Vec<(String, SystemTime)> = vec![];
-    if let Ok(text) = std::fs::read_to_string(paths::home().join(".claude.json")) {
+    if let Ok(text) = std::fs::read_to_string(home_dir.join(".claude.json")) {
         if let Ok(v) = serde_json::from_str::<Value>(&text) {
             if let Some(map) = v.get("projects").and_then(Value::as_object) {
                 for path in map.keys() {
@@ -98,7 +103,7 @@ pub fn projects(cfg: &Config) -> Vec<(String, bool)> {
                     if path == "/" || !p.is_dir() || path.contains("/.claude/") {
                         continue;
                     }
-                    let dir = claude_project_dir(path);
+                    let dir = claude_project_dir(home_dir, path);
                     let t = if dir.exists() { mtime(&dir) } else { SystemTime::UNIX_EPOCH };
                     recent.push((path.clone(), t));
                 }
@@ -114,7 +119,7 @@ pub fn projects(cfg: &Config) -> Vec<(String, bool)> {
         }
     }
     for root in &cfg.project_roots {
-        let root = expand_tilde(root);
+        let root = crate::config::expand_tilde_in(home_dir, root);
         let Ok(rd) = std::fs::read_dir(&root) else { continue };
         let mut dirs: Vec<(String, SystemTime)> = rd
             .flatten()
@@ -415,6 +420,7 @@ pub fn overview() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     #[test]
     fn fuzzy_prefers_folder_names() {
@@ -427,6 +433,74 @@ mod tests {
 
     #[test]
     fn encodes_claude_project_dirs() {
-        assert!(claude_project_dir("/home/u/My.Proj").ends_with(".claude/projects/-home-u-My-Proj"));
+        assert!(claude_project_dir(Path::new("/home/u"), "/home/u/My.Proj").ends_with(".claude/projects/-home-u-My-Proj"));
+    }
+
+    #[test]
+    fn fuzzy_ranks_prefix_then_substring_then_scattered() {
+        let prefix = fuzzy("job", "~/code/JobScraper").unwrap();
+        let inner = fuzzy("scr", "~/code/JobScraper").unwrap();
+        let path_only = fuzzy("code", "~/code/JobScraper").unwrap();
+        let scattered = fuzzy("jsr", "~/code/JobScraper").unwrap();
+        assert!(prefix > inner && inner > path_only && path_only > scattered, "{prefix} {inner} {path_only} {scattered}");
+        assert_eq!(fuzzy("", "anything"), Some(0));
+        assert_eq!(fuzzy("JOB", "~/code/jobscraper"), fuzzy("job", "~/code/jobscraper"), "case-insensitive");
+        assert!(fuzzy("é", "~/café").is_some());
+        assert!(fuzzy("ab", "ba").is_none(), "order matters");
+    }
+
+    #[test]
+    fn elapsed_reads_like_a_clock() {
+        assert_eq!(elapsed(10_000, 10_000), "0s");
+        assert_eq!(elapsed(69_000, 10_000), "59s");
+        assert_eq!(elapsed(70_000, 10_000), "1m");
+        assert_eq!(elapsed(3_600_000, 0), "1h00");
+        assert_eq!(elapsed(3_600_000 + 5 * 60_000, 0), "1h05");
+        assert_eq!(elapsed(0, 10_000), "0s", "a clock going backwards is not negative");
+    }
+
+    #[test]
+    fn centered_fits_any_terminal() {
+        let r = centered(Rect { x: 0, y: 0, width: 200, height: 50 }, 90, 30);
+        assert_eq!((r.x, r.y, r.width, r.height), (55, 10, 90, 30));
+        let tiny = centered(Rect { x: 2, y: 1, width: 40, height: 10 }, 90, 30);
+        assert_eq!((tiny.x, tiny.y, tiny.width, tiny.height), (2, 1, 40, 10));
+    }
+
+    #[test]
+    fn status_colors_follow_the_island() {
+        assert_eq!(status_color("working", false), GREEN);
+        assert_eq!(status_color("needs_you", true), YELLOW);
+        assert_eq!(status_color("your_turn", false), RED);
+        assert_ne!(status_color("your_turn", true), RED, "seen is dimmer");
+        assert_eq!(status_color("exited", true), GREY);
+        assert_eq!(status_color("???", true), GREY);
+    }
+
+    #[test]
+    fn lists_recent_projects_then_roots_then_home() {
+        let home = std::env::temp_dir().join(format!("claude-deck-picker-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&home);
+        let h = |p: &str| home.join(p).display().to_string();
+        for d in ["code/old", "code/fresh", "roots/r1", "roots/r2", "roots/.hidden", ".claude/projects"] {
+            std::fs::create_dir_all(home.join(d)).unwrap();
+        }
+        std::fs::write(home.join("roots/not-a-dir.txt"), "").unwrap();
+        // Claude knows three folders: one with transcripts, one without, one deleted.
+        let claude_json = json!({"projects": {h("code/old"): {}, h("code/fresh"): {}, h("gone"): {}, "/": {}}});
+        std::fs::write(home.join(".claude.json"), claude_json.to_string()).unwrap();
+        std::fs::create_dir_all(claude_project_dir(&home, &h("code/fresh"))).unwrap();
+        let cfg = Config { project_roots: vec!["~/roots".into(), "~/missing".into(), "~/code".into()], ..Config::default() };
+
+        let got = projects_in(&home, &cfg);
+        let names: Vec<(String, bool)> = got.iter().map(|(p, r)| (p.strip_prefix(&h("")).unwrap_or(p).to_string(), *r)).collect();
+        assert_eq!(names[0], ("code/fresh".to_string(), true), "used with Claude first");
+        assert_eq!(names[1], ("code/old".to_string(), false));
+        let rest: Vec<&str> = names[2..].iter().map(|(p, _)| p.as_str()).collect();
+        assert!(rest.contains(&"roots/r1") && rest.contains(&"roots/r2"));
+        assert!(!rest.iter().any(|p| p.contains("hidden") || p.contains("not-a-dir") || p.contains("gone")));
+        assert_eq!(names.iter().filter(|(p, _)| p == "code/old").count(), 1, "no duplicates from the roots");
+        assert_eq!(got.last().unwrap().0, home.display().to_string(), "home comes last");
+        std::fs::remove_dir_all(&home).unwrap();
     }
 }
