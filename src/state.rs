@@ -13,6 +13,9 @@ pub enum Status {
     NeedsYou,
     /// The turn ended; Claude waits for your next prompt (red).
     YourTurn,
+    /// The turn ended, but Claude left work running (a background shell or agent) and
+    /// comes back by itself when it finishes. Nothing to do for you yet (purple).
+    Background,
     /// The claude process ended (grey).
     Exited,
 }
@@ -27,6 +30,7 @@ impl Status {
             Status::Working => "working",
             Status::NeedsYou => "needs you",
             Status::YourTurn => "your turn",
+            Status::Background => "in background",
             Status::Exited => "exited",
         }
     }
@@ -75,7 +79,57 @@ pub struct Session {
     /// work going on at the same time (a background subagent) leave it alone.
     #[serde(skip)]
     pub pending_tool: Option<String>,
+    /// The claude process behind the session, as its hooks report it.
+    #[serde(default)]
+    pub claude_pid: Option<u32>,
+    /// Shell commands Claude has running in the background, from its process tree.
+    #[serde(default)]
+    pub bg_shells: Vec<String>,
+    /// Subagents started and not finished. Those still going when a turn ends run in
+    /// the background.
+    #[serde(default)]
+    pub bg_agents: Vec<Agent>,
+    /// When the background work was last seen to have all finished, while Claude has
+    /// not picked up yet.
+    #[serde(default)]
+    pub bg_done: Option<u64>,
+    /// What each Agent call is about, until its SubagentStart names the agent.
+    #[serde(skip)]
+    agent_queue: std::collections::VecDeque<String>,
 }
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct Agent {
+    pub id: String,
+    /// For people: the Agent call's description, or the agent's type.
+    pub what: String,
+    /// When anything was last heard from it (unix ms).
+    pub last: u64,
+}
+
+impl Session {
+    pub fn has_background(&self) -> bool {
+        !self.bg_shells.is_empty() || !self.bg_agents.is_empty()
+    }
+
+    /// "Waiting on cargo build", "Waiting on 3 background tasks".
+    fn waiting_text(&self) -> String {
+        let n = self.bg_shells.len() + self.bg_agents.len();
+        match (self.bg_shells.first(), self.bg_agents.first()) {
+            _ if n > 1 => format!("Waiting on {n} background tasks"),
+            (Some(cmd), _) => format!("Waiting on {}", truncate(cmd, 50)),
+            (None, Some(a)) => format!("Waiting on agent: {}", truncate(&a.what, 44)),
+            (None, None) => "Background work finished".into(),
+        }
+    }
+}
+
+/// How long a background agent may stay silent before it is presumed gone (its
+/// SubagentStop was lost). Its next tool call brings it back.
+pub const AGENT_QUIET_MS: u64 = 15 * 60_000;
+/// How long Claude gets to pick up after its background work finished before the
+/// session counts as waiting on you.
+pub const BG_GRACE_MS: u64 = 30_000;
 
 /// What an MCP server's question is recorded as in `pending_tool`: it has no tool name.
 const ELICITATION: &str = "\u{0}elicitation";
@@ -281,6 +335,11 @@ impl Store {
             tab: None,
             tab_index: None,
             pending_tool: None,
+            claude_pid: None,
+            bg_shells: vec![],
+            bg_agents: vec![],
+            bg_done: None,
+            agent_queue: Default::default(),
         });
         self.renumber();
     }
@@ -387,6 +446,14 @@ impl Store {
         if to != Status::NeedsYou {
             s.pending_tool = None;
         }
+        if to != Status::Background {
+            s.bg_done = None;
+        }
+        if to == Status::Exited {
+            s.bg_shells.clear();
+            s.bg_agents.clear();
+            s.agent_queue.clear();
+        }
         Some(Transition { sid: sid.to_string(), from, to, seen: s.seen })
     }
 
@@ -429,7 +496,42 @@ impl Store {
         // A subagent's tool calls say nothing about a prompt the main agent (or another
         // subagent) is waiting on you for: with parallel agents, they must not turn a
         // pending yellow back to green and withdraw its notification.
-        let from_subagent = p.get("agent_id").and_then(Value::as_str).is_some_and(|a| !a.is_empty());
+        let agent_id = p.get("agent_id").and_then(Value::as_str).filter(|a| !a.is_empty());
+        let from_subagent = agent_id.is_some();
+        if let (Some(id), Some(s)) = (agent_id, self.get_mut(sid)) {
+            if event == "SubagentStop" {
+                s.bg_agents.retain(|a| a.id != id);
+            } else if let Some(a) = s.bg_agents.iter_mut().find(|a| a.id == id) {
+                a.last = now;
+            } else {
+                // A new agent (SubagentStart), or one we lost track of that just spoke up.
+                let what = match s.agent_queue.pop_front() {
+                    Some(d) if event == "SubagentStart" => d,
+                    other => {
+                        if let Some(d) = other {
+                            s.agent_queue.push_front(d);
+                        }
+                        p.get("agent_type").and_then(Value::as_str).unwrap_or("agent").to_string()
+                    }
+                };
+                s.bg_agents.push(Agent { id: id.to_string(), what, last: now });
+            }
+        }
+        // An agent at work after the turn ended runs in the background: Claude will be
+        // back when it is done, so nothing waits on you. Its tool calls are not the main
+        // conversation working again.
+        if from_subagent
+            && matches!(status, Some(Status::YourTurn | Status::Background))
+            && matches!(event, "PreToolUse" | "PostToolUse" | "PostToolUseFailure" | "SubagentStart" | "SubagentStop")
+        {
+            let t = if status == Some(Status::YourTurn) && event != "SubagentStop" { self.set_status(sid, Status::Background, now) } else { None };
+            if let Some(s) = self.get_mut(sid) {
+                if s.status == Status::Background {
+                    s.last_action = Some(s.waiting_text());
+                }
+            }
+            return t;
+        }
         if from_subagent && status == Some(Status::NeedsYou) {
             let pending = self.get(sid).and_then(|s| s.pending_tool.clone());
             let unrelated = pending.as_deref().is_some_and(|w| w != tool);
@@ -463,6 +565,8 @@ impl Store {
                     if matches!(source, "clear" | "resume") {
                         s.last_action = None;
                         s.last_prompt = None;
+                        s.bg_agents.clear();
+                        s.agent_queue.clear();
                     }
                 }
                 t.map(|mut t| { t.seen = true; t })
@@ -479,6 +583,16 @@ impl Store {
             }
             "PreToolUse" => {
                 set_action(self, describe_tool(tool, &input));
+                if matches!(tool, "Agent" | "Task") && !from_subagent {
+                    let d = input.get("description").and_then(Value::as_str).unwrap_or("").trim();
+                    if let Some(s) = self.get_mut(sid) {
+                        s.agent_queue.push_back(if d.is_empty() { "agent".into() } else { d.to_string() });
+                        // A call whose agent never started (denied, failed) leaves no trace.
+                        while s.agent_queue.len() > 8 {
+                            s.agent_queue.pop_front();
+                        }
+                    }
+                }
                 if matches!(tool, "AskUserQuestion" | "ExitPlanMode") {
                     let t = self.set_status(sid, Status::NeedsYou, now);
                     self.set_pending(sid, tool);
@@ -528,13 +642,17 @@ impl Store {
                     }
                     // Claude has been idle at the prompt for a while; make sure we show red.
                     // But never over a question that is still open: that wait is not idleness.
-                    "idle_prompt" if status != Some(Status::NeedsYou) => self.set_status(sid, Status::YourTurn, now),
+                    // Nor over background work: Claude is idle because it waits on that.
+                    "idle_prompt" if !matches!(status, Some(Status::NeedsYou | Status::Background)) => self.set_status(sid, Status::YourTurn, now),
                     _ => None,
                 }
             }
             "Stop" => {
-                set_action(self, "Finished".into());
-                self.set_status(sid, Status::YourTurn, now)
+                // Work Claude left running (the daemon looked for shells just before this)
+                // brings it back by itself: the turn is over, but it is not your turn.
+                let waiting = self.get(sid).filter(|s| s.has_background()).map(Session::waiting_text);
+                set_action(self, waiting.clone().unwrap_or_else(|| "Finished".into()));
+                self.set_status(sid, if waiting.is_some() { Status::Background } else { Status::YourTurn }, now)
             }
             "StopFailure" => {
                 let err = p.get("error").map(|e| match e {
@@ -558,6 +676,71 @@ impl Store {
             }
             _ => None,
         }
+    }
+
+    /// Record which claude process runs a session (its hooks report it).
+    pub fn set_claude_pid(&mut self, sid: &str, pid: u32) {
+        if let Some(s) = self.get_mut(sid) {
+            s.claude_pid = Some(pid);
+        }
+    }
+
+    /// What the process tree says Claude has running in the background right now.
+    pub fn set_shells(&mut self, sid: &str, shells: Vec<String>) {
+        if let Some(s) = self.get_mut(sid) {
+            if s.bg_shells != shells {
+                s.bg_shells = shells;
+                self.rev += 1;
+            }
+        }
+    }
+
+    /// Re-check a session that waits on background work, with a fresh look at its
+    /// shells and whether its screen shows Claude busy. When the work has all finished,
+    /// Claude wakes up by itself to look at the results (no hook says so; its spinner
+    /// does); if it has not after [`BG_GRACE_MS`], it is your turn after all. True if
+    /// anything visible changed.
+    pub fn settle(&mut self, sid: &str, shells: Vec<String>, busy: bool, now: u64) -> (bool, Option<Transition>) {
+        let Some(s) = self.get_mut(sid) else { return (false, None) };
+        if s.status != Status::Background {
+            return (false, None);
+        }
+        let agents = s.bg_agents.len();
+        s.bg_agents.retain(|a| now.saturating_sub(a.last) < AGENT_QUIET_MS);
+        let mut changed = s.bg_shells != shells || s.bg_agents.len() != agents;
+        s.bg_shells = shells;
+        if s.has_background() {
+            changed |= s.bg_done.take().is_some();
+        } else if busy {
+            s.last_event = now;
+            self.rev += 1;
+            let t = self.set_status(sid, Status::Working, now);
+            if let Some(s) = self.get_mut(sid) {
+                s.last_action = Some("Picking up background results".into());
+            }
+            return (true, t);
+        } else {
+            match s.bg_done {
+                None => {
+                    s.bg_done = Some(now);
+                    changed = true;
+                }
+                Some(done) if now.saturating_sub(done) >= BG_GRACE_MS => {
+                    self.rev += 1;
+                    let t = self.set_status(sid, Status::YourTurn, now);
+                    if let Some(s) = self.get_mut(sid) {
+                        s.last_action = Some("Background work finished".into());
+                    }
+                    return (true, t);
+                }
+                Some(_) => {}
+            }
+        }
+        if changed {
+            s.last_action = Some(s.waiting_text());
+            self.rev += 1;
+        }
+        (changed, None)
     }
 
     fn set_pending(&mut self, sid: &str, tool: &str) {
@@ -592,6 +775,10 @@ impl Store {
         if let Some(s) = self.get_mut(sid) {
             s.seen = true;
             s.last_action = Some("Interrupted".into());
+            // Esc stops the agents of the turn, and no SubagentStop says so. A background
+            // agent that survives is tracked again at its next tool call.
+            s.bg_agents.clear();
+            s.agent_queue.clear();
         }
         t.map(|mut t| { t.seen = true; t })
     }
@@ -686,14 +873,15 @@ impl Store {
             .min_by_key(|s| (s.seen, rank(s), s.since))
     }
 
-    pub fn counts(&self) -> [usize; 4] {
-        let mut c = [0; 4];
+    pub fn counts(&self) -> [usize; 5] {
+        let mut c = [0; 5];
         for s in &self.sessions {
             c[match s.status {
                 Status::Working => 0,
                 Status::NeedsYou => 1,
                 Status::YourTurn => 2,
                 Status::Exited => 3,
+                Status::Background => 4,
             }] += 1;
         }
         c
@@ -706,6 +894,7 @@ impl Store {
             (c[0], Status::Working),
             (c[1], Status::NeedsYou),
             (c[2], Status::YourTurn),
+            (c[4], Status::Background),
             (c[3], Status::Exited),
         ]
         .iter()
@@ -1193,7 +1382,7 @@ mod tests {
         st.apply_hook("a", Some(1), &hook("UserPromptSubmit", json!({"prompt": "x"})), 10);
         st.apply_hook("b", Some(2), &hook("PermissionRequest", json!({"tool_name": "Bash", "tool_input": {}})), 10);
         st.exited("c", Some(0), 10);
-        assert_eq!(st.counts(), [1, 1, 0, 1]);
+        assert_eq!(st.counts(), [1, 1, 0, 1, 0]);
         assert_eq!(st.summary(), "1 working · 1 needs you · 1 exited");
         // Exited and working sessions are never "waiting".
         st.ack_sid("b");
@@ -1344,5 +1533,189 @@ mod tests {
         let mut st = Store::default();
         assert!(st.apply_hook("", Some(1), &hook("UserPromptSubmit", json!({"prompt": "x"})), 1).is_none());
         assert!(st.sessions.is_empty(), "no phantom session");
+    }
+
+    fn agent(event: &str, id: &str, extra: Value) -> Value {
+        let mut v = hook(event, extra);
+        v["agent_id"] = json!(id);
+        v["agent_type"] = json!("general-purpose");
+        v
+    }
+
+    #[test]
+    fn a_turn_that_leaves_a_shell_running_is_not_your_turn() {
+        let mut st = store_with_session();
+        st.apply_hook("s1", Some(7), &hook("UserPromptSubmit", json!({"prompt": "build it"})), 10);
+        st.set_shells("s1", vec!["cargo build --release".into()]);
+        let t = st.apply_hook("s1", Some(7), &hook("Stop", json!({})), 20).unwrap();
+        assert_eq!((t.from, t.to, t.seen), (Status::Working, Status::Background, true), "no notification");
+        let s = st.get("s1").unwrap();
+        assert!(!s.status.wants_attention());
+        assert_eq!(s.last_action.as_deref(), Some("Waiting on cargo build --release"));
+        assert!(st.next_waiting().is_none());
+        assert_eq!(st.summary(), "1 in background");
+
+        // Claude idles at its prompt meanwhile; that is not waiting on you.
+        assert!(st.apply_hook("s1", Some(7), &hook("Notification", json!({"notification_type": "idle_prompt"})), 60_000).is_none());
+        assert_eq!(st.get("s1").unwrap().status, Status::Background);
+
+        // Another one starts; the build is still going.
+        let (moved, t) = st.settle("s1", vec!["cargo build --release".into(), "npm test".into()], false, 61_000);
+        assert!(moved && t.is_none());
+        assert_eq!(st.get("s1").unwrap().last_action.as_deref(), Some("Waiting on 2 background tasks"));
+        assert_eq!(st.settle("s1", vec!["cargo build --release".into(), "npm test".into()], false, 63_000), (false, None));
+    }
+
+    #[test]
+    fn finished_background_work_waits_for_claude_to_pick_up_then_falls_to_you() {
+        let mut st = store_with_session();
+        st.apply_hook("s1", Some(7), &hook("UserPromptSubmit", json!({"prompt": "go"})), 10);
+        st.set_shells("s1", vec!["make".into()]);
+        st.apply_hook("s1", Some(7), &hook("Stop", json!({})), 20);
+
+        let (moved, t) = st.settle("s1", vec![], false, 1000);
+        assert!(moved && t.is_none(), "a moment for Claude to wake up");
+        let s = st.get("s1").unwrap();
+        assert_eq!((s.status, s.bg_done), (Status::Background, Some(1000)));
+        assert_eq!(s.last_action.as_deref(), Some("Background work finished"));
+        assert_eq!(st.settle("s1", vec![], false, 1000 + BG_GRACE_MS - 1), (false, None));
+
+        let (moved, t) = st.settle("s1", vec![], false, 1000 + BG_GRACE_MS);
+        let t = t.unwrap();
+        assert!(moved);
+        assert_eq!((t.from, t.to, t.seen), (Status::Background, Status::YourTurn, false), "now it is news");
+        assert_eq!(st.get("s1").unwrap().bg_done, None);
+    }
+
+    #[test]
+    fn claude_waking_up_on_its_results_is_working() {
+        let mut st = store_with_session();
+        st.apply_hook("s1", Some(7), &hook("UserPromptSubmit", json!({"prompt": "go"})), 10);
+        st.set_shells("s1", vec!["make".into()]);
+        st.apply_hook("s1", Some(7), &hook("Stop", json!({})), 20);
+        let (_, t) = st.settle("s1", vec![], true, 2000);
+        assert_eq!(t.unwrap().to, Status::Working);
+        let s = st.get("s1").unwrap();
+        assert_eq!(s.last_action.as_deref(), Some("Picking up background results"));
+        assert_eq!(s.last_event, 2000, "the interrupt watch gives it a moment");
+        // Its answer ends the turn like any other.
+        st.set_shells("s1", vec![]);
+        assert_eq!(st.apply_hook("s1", Some(7), &hook("Stop", json!({})), 9000).unwrap().to, Status::YourTurn);
+        assert_eq!(st.get("s1").unwrap().last_action.as_deref(), Some("Finished"));
+    }
+
+    #[test]
+    fn work_that_comes_back_cancels_the_grace() {
+        let mut st = store_with_session();
+        st.set_shells("s1", vec!["a".into()]);
+        st.apply_hook("s1", Some(7), &hook("UserPromptSubmit", json!({"prompt": "go"})), 10);
+        st.apply_hook("s1", Some(7), &hook("Stop", json!({})), 20);
+        st.settle("s1", vec![], false, 1000);
+        st.settle("s1", vec!["b".into()], false, 2000);
+        assert_eq!(st.get("s1").unwrap().bg_done, None);
+        assert_eq!(st.settle("s1", vec!["b".into()], false, 2000 + BG_GRACE_MS * 2).1, None);
+    }
+
+    #[test]
+    fn your_prompt_or_claude_moving_ends_the_background_wait() {
+        let mut st = store_with_session();
+        st.set_shells("s1", vec!["make".into()]);
+        st.apply_hook("s1", Some(7), &hook("UserPromptSubmit", json!({"prompt": "go"})), 10);
+        st.apply_hook("s1", Some(7), &hook("Stop", json!({})), 20);
+        assert_eq!(st.apply_hook("s1", Some(7), &hook("PreToolUse", json!({"tool_name": "Read", "tool_input": {}})), 30).unwrap().to, Status::Working);
+        st.apply_hook("s1", Some(7), &hook("Stop", json!({})), 40);
+        assert_eq!(st.apply_hook("s1", Some(7), &hook("UserPromptSubmit", json!({"prompt": "and?"})), 50).unwrap().to, Status::Working);
+        st.apply_hook("s1", Some(7), &hook("Stop", json!({})), 60);
+        let t = st.apply_hook("s1", Some(7), &hook("PermissionRequest", json!({"tool_name": "Bash", "tool_input": {"command": "rm x"}})), 70).unwrap();
+        assert_eq!((t.from, t.to), (Status::Background, Status::NeedsYou), "a background agent may need you");
+        // Leaving the pane stops it all: settle has nothing to do with other states.
+        assert_eq!(st.settle("s1", vec![], false, 80), (false, None));
+    }
+
+    #[test]
+    fn a_background_agent_keeps_the_session_purple_until_it_stops() {
+        // Recorded order: PreToolUse Agent, SubagentStart, PostToolUse Agent, ..., Stop.
+        let mut st = store_with_session();
+        st.apply_hook("s1", Some(7), &hook("UserPromptSubmit", json!({"prompt": "research"})), 10);
+        st.apply_hook("s1", Some(7), &hook("PreToolUse", json!({"tool_name": "Agent", "tool_input": {"description": "Survey the API"}})), 11);
+        st.apply_hook("s1", Some(7), &agent("SubagentStart", "a1", json!({})), 12);
+        st.apply_hook("s1", Some(7), &hook("PostToolUse", json!({"tool_name": "Agent"})), 13);
+        let t = st.apply_hook("s1", Some(7), &hook("Stop", json!({})), 20).unwrap();
+        assert_eq!(t.to, Status::Background);
+        assert_eq!(st.get("s1").unwrap().last_action.as_deref(), Some("Waiting on agent: Survey the API"));
+
+        // Its tool calls are not the main conversation working again.
+        assert!(st.apply_hook("s1", Some(7), &agent("PreToolUse", "a1", json!({"tool_name": "Grep", "tool_input": {"pattern": "x"}})), 30).is_none());
+        assert_eq!(st.get("s1").unwrap().status, Status::Background);
+        assert_eq!(st.get("s1").unwrap().bg_agents[0].last, 30);
+
+        assert!(st.apply_hook("s1", Some(7), &agent("SubagentStop", "a1", json!({})), 40).is_none());
+        let s = st.get("s1").unwrap();
+        assert!(s.bg_agents.is_empty());
+        assert_eq!((s.status, s.last_action.as_deref()), (Status::Background, Some("Background work finished")));
+        // Claude answers (no tool needed): the wake-up turn's Stop.
+        assert_eq!(st.apply_hook("s1", Some(7), &hook("Stop", json!({})), 50).unwrap().to, Status::YourTurn);
+    }
+
+    #[test]
+    fn a_foreground_agent_leaves_nothing_behind() {
+        let mut st = store_with_session();
+        st.apply_hook("s1", Some(7), &hook("UserPromptSubmit", json!({"prompt": "x"})), 10);
+        st.apply_hook("s1", Some(7), &hook("PreToolUse", json!({"tool_name": "Agent", "tool_input": {"description": "d"}})), 11);
+        st.apply_hook("s1", Some(7), &agent("SubagentStart", "a1", json!({})), 12);
+        st.apply_hook("s1", Some(7), &agent("PreToolUse", "a1", json!({"tool_name": "Read", "tool_input": {}})), 13);
+        st.apply_hook("s1", Some(7), &agent("SubagentStop", "a1", json!({})), 14);
+        st.apply_hook("s1", Some(7), &hook("PostToolUse", json!({"tool_name": "Agent"})), 15);
+        assert_eq!(st.apply_hook("s1", Some(7), &hook("Stop", json!({})), 20).unwrap().to, Status::YourTurn);
+    }
+
+    #[test]
+    fn an_agent_heard_from_after_the_turn_turns_red_to_purple() {
+        // Its SubagentStart came before an Esc (which forgets agents); it lives on.
+        let mut st = store_with_session();
+        st.apply_hook("s1", Some(7), &hook("UserPromptSubmit", json!({"prompt": "x"})), 10);
+        st.apply_hook("s1", Some(7), &agent("SubagentStart", "a1", json!({})), 11);
+        st.interrupted("s1", 12);
+        assert!(st.get("s1").unwrap().bg_agents.is_empty());
+        let t = st.apply_hook("s1", Some(7), &agent("PostToolUse", "a1", json!({"tool_name": "Read"})), 20).unwrap();
+        assert_eq!((t.from, t.to), (Status::YourTurn, Status::Background));
+        assert_eq!(st.get("s1").unwrap().last_action.as_deref(), Some("Waiting on agent: general-purpose"));
+    }
+
+    #[test]
+    fn a_silent_agent_is_eventually_presumed_gone() {
+        let mut st = store_with_session();
+        st.apply_hook("s1", Some(7), &hook("UserPromptSubmit", json!({"prompt": "x"})), 10);
+        st.apply_hook("s1", Some(7), &agent("SubagentStart", "a1", json!({})), 11);
+        st.apply_hook("s1", Some(7), &hook("Stop", json!({})), 20);
+        assert_eq!(st.settle("s1", vec![], false, 11 + AGENT_QUIET_MS - 1), (false, None));
+        let (moved, _) = st.settle("s1", vec![], false, 11 + AGENT_QUIET_MS);
+        assert!(moved);
+        assert!(st.get("s1").unwrap().bg_agents.is_empty());
+        assert!(st.get("s1").unwrap().bg_done.is_some());
+    }
+
+    #[test]
+    fn exiting_forgets_the_background_work() {
+        let mut st = store_with_session();
+        st.set_shells("s1", vec!["make".into()]);
+        st.apply_hook("s1", Some(7), &hook("UserPromptSubmit", json!({"prompt": "x"})), 10);
+        st.apply_hook("s1", Some(7), &agent("SubagentStart", "a1", json!({})), 11);
+        st.apply_hook("s1", Some(7), &hook("Stop", json!({})), 20);
+        st.exited("s1", Some(0), 30);
+        let s = st.get("s1").unwrap();
+        assert!(!s.has_background());
+        assert_eq!(st.counts(), [0, 0, 0, 1, 0]);
+    }
+
+    #[test]
+    fn older_sessions_without_background_fields_still_load() {
+        let mut v = serde_json::to_value(&store_with_session().sessions[0]).unwrap();
+        for k in ["claude_pid", "bg_shells", "bg_agents", "bg_done"] {
+            v.as_object_mut().unwrap().remove(k);
+        }
+        let s: Session = serde_json::from_value(v).unwrap();
+        assert!(!s.has_background());
+        assert_eq!(serde_json::to_value(Status::Background).unwrap(), json!("background"));
     }
 }

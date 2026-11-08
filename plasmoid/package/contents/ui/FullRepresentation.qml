@@ -172,75 +172,102 @@ PlasmaExtras.Representation {
 
     header: PlasmaExtras.PlasmoidHeading {
         id: heading
-        RowLayout {
+        ColumnLayout {
             anchors.fill: parent
             spacing: Kirigami.Units.smallSpacing
-            Critter {
-                id: headerCritter
-                px: 2
-                mood: (full.deckRoot.deck.counts || {}).working > 0 ? "running" : "idle"
-                body: Plasmoid.configuration.claudeColoredGlyph ? "#d97757" : Kirigami.Theme.textColor
-                Layout.leftMargin: Kirigami.Units.smallSpacing
-                // One hop as the cards come in: up three sprite pixels and down again
-                // under gravity, in whole pixels so the sprite stays crisp.
-                property real lift: 0
-                transform: Translate { y: -Math.round(headerCritter.lift) }
-                SequentialAnimation {
-                    id: hopAnim
-                    PauseAnimation { duration: Kirigami.Units.shortDuration }
-                    NumberAnimation {
-                        target: headerCritter; property: "lift"; to: headerCritter.px * 3
-                        duration: Math.round(Kirigami.Units.longDuration * 0.6); easing.type: Easing.OutQuad
-                    }
-                    NumberAnimation {
-                        target: headerCritter; property: "lift"; to: 0
-                        duration: Math.round(Kirigami.Units.longDuration * 0.6); easing.type: Easing.InQuad
-                    }
-                }
-                Connections {
-                    target: full
-                    function onOpening() {
-                        hopAnim.stop()
-                        headerCritter.lift = 0
-                        if (Kirigami.Units.longDuration > 1) hopAnim.start()
-                    }
-                }
-            }
-            PlasmaExtras.Heading {
-                level: 3
-                text: "Claude Deck"
-            }
-            PlasmaComponents3.Label {
-                text: full.deckRoot.running ? full.deckRoot.deck.summary : i18n("not running")
-                opacity: 0.65
-                elide: Text.ElideRight
+            RowLayout {
                 Layout.fillWidth: true
+                spacing: Kirigami.Units.smallSpacing
+                Critter {
+                    id: headerCritter
+                    px: 2
+                    // Not any one session's critter: it sums up the whole deck.
+                    mood: Logic.deckMood(full.deckRoot.running, full.deckRoot.deck.counts)
+                    juggled: ((full.deckRoot.deck.counts || {}).working || 0) + ((full.deckRoot.deck.counts || {}).background || 0)
+                    alert: Plasmoid.configuration.colorNeedsYou
+                    body: Plasmoid.configuration.claudeColoredGlyph ? "#d97757" : Kirigami.Theme.textColor
+                    Layout.leftMargin: Kirigami.Units.smallSpacing
+                    // One hop as the cards come in: up three sprite pixels and down again
+                    // under gravity, in whole pixels so the sprite stays crisp.
+                    property real lift: 0
+                    transform: Translate { y: -Math.round(headerCritter.lift) }
+                    SequentialAnimation {
+                        id: hopAnim
+                        PauseAnimation { duration: Kirigami.Units.shortDuration }
+                        NumberAnimation {
+                            target: headerCritter; property: "lift"; to: headerCritter.px * 3
+                            duration: Math.round(Kirigami.Units.longDuration * 0.6); easing.type: Easing.OutQuad
+                        }
+                        NumberAnimation {
+                            target: headerCritter; property: "lift"; to: 0
+                            duration: Math.round(Kirigami.Units.longDuration * 0.6); easing.type: Easing.InQuad
+                        }
+                    }
+                    Connections {
+                        target: full
+                        function onOpening() {
+                            hopAnim.stop()
+                            headerCritter.lift = 0
+                            if (Kirigami.Units.longDuration > 1) hopAnim.start()
+                        }
+                    }
+                }
+                PlasmaExtras.Heading {
+                    level: 3
+                    text: "Claude Deck"
+                }
+                PlasmaComponents3.Label {
+                    text: full.deckRoot.running ? full.deckRoot.deck.summary : i18n("not running")
+                    opacity: 0.65
+                    elide: Text.ElideRight
+                    Layout.fillWidth: true
+                }
+                PlasmaComponents3.ToolButton {
+                    icon.name: "list-add-symbolic"
+                    onClicked: full.deckRoot.run(full.deckRoot.running ? "new --pick" : "toggle")
+                    PlasmaComponents3.ToolTip.text: i18n("New session (middle-click the island)")
+                    PlasmaComponents3.ToolTip.visible: hovered
+                }
+                PlasmaComponents3.ToolButton {
+                    icon.name: "view-grid-symbolic"
+                    enabled: full.deckRoot.sessions.length > 1
+                    onClicked: full.deckRoot.run("tile")
+                    PlasmaComponents3.ToolTip.text: i18n("Tile all sessions side by side")
+                    PlasmaComponents3.ToolTip.visible: hovered
+                }
+                PlasmaComponents3.ToolButton {
+                    icon.name: "tab-detach-symbolic"
+                    enabled: full.deckRoot.groups.length < full.deckRoot.sessions.length
+                    onClicked: full.deckRoot.run("untile", () => full.deckRoot.fetchPanes())
+                    PlasmaComponents3.ToolTip.text: i18n("Spread tiled sessions back into tabs of their own")
+                    PlasmaComponents3.ToolTip.visible: hovered
+                }
+                PlasmaComponents3.ToolButton {
+                    icon.name: "window-symbolic"
+                    onClicked: full.deckRoot.run("toggle")
+                    PlasmaComponents3.ToolTip.text: i18n("Show / hide the deck")
+                    PlasmaComponents3.ToolTip.visible: hovered
+                }
             }
-            PlasmaComponents3.ToolButton {
-                icon.name: "list-add-symbolic"
-                onClicked: full.deckRoot.run(full.deckRoot.running ? "new --pick" : "toggle")
-                PlasmaComponents3.ToolTip.text: i18n("New session (middle-click the island)")
-                PlasmaComponents3.ToolTip.visible: hovered
-            }
-            PlasmaComponents3.ToolButton {
-                icon.name: "view-grid-symbolic"
-                enabled: full.deckRoot.sessions.length > 1
-                onClicked: full.deckRoot.run("tile")
-                PlasmaComponents3.ToolTip.text: i18n("Tile all sessions side by side")
-                PlasmaComponents3.ToolTip.visible: hovered
-            }
-            PlasmaComponents3.ToolButton {
-                icon.name: "tab-detach-symbolic"
-                enabled: full.deckRoot.groups.length < full.deckRoot.sessions.length
-                onClicked: full.deckRoot.run("untile", () => full.deckRoot.fetchPanes())
-                PlasmaComponents3.ToolTip.text: i18n("Spread tiled sessions back into tabs of their own")
-                PlasmaComponents3.ToolTip.visible: hovered
-            }
-            PlasmaComponents3.ToolButton {
-                icon.name: "window-symbolic"
-                onClicked: full.deckRoot.run("toggle")
-                PlasmaComponents3.ToolTip.text: i18n("Show / hide the deck")
-                PlasmaComponents3.ToolTip.visible: hovered
+
+            // What is left of the usage limits, side by side, right under the title.
+            RowLayout {
+                visible: full.deckRoot.usageMeters.length > 0
+                Layout.fillWidth: true
+                Layout.leftMargin: Kirigami.Units.smallSpacing
+                Layout.rightMargin: Kirigami.Units.smallSpacing
+                Layout.bottomMargin: Kirigami.Units.smallSpacing
+                spacing: Kirigami.Units.largeSpacing
+                Repeater {
+                    model: full.deckRoot.usageMeters.length
+                    delegate: UsageMeter {
+                        required property int index
+                        info: full.deckRoot.usageMeters[index] || { label: "", known: false }
+                        now: full.deckRoot.now
+                        Layout.fillWidth: true
+                        Layout.preferredWidth: 1
+                    }
+                }
             }
         }
     }

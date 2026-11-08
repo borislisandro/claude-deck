@@ -20,6 +20,10 @@ ColumnLayout {
     readonly property bool asking: session.status === "needs_you"
     readonly property bool exited: session.status === "exited"
     readonly property bool busy: session.status === "working" || asking
+    /// What Claude left running when its turn ended (shell commands, then agents).
+    readonly property var background: session.status === "background"
+        ? (session.bg_shells || []).concat((session.bg_agents || []).map(a => i18n("Agent: %1", a.what)))
+        : []
     /// Changes whenever Claude may have written something new.
     readonly property string stamp: [session.sid, session.status, session.since,
         session.last_action || "", session.last_prompt || ""].join("|")
@@ -52,6 +56,32 @@ ColumnLayout {
         id: errorTimer
         interval: 6000
         onTriggered: detail.sendError = ""
+    }
+
+    // What the session waits on: Claude comes back by itself when it finishes.
+    ColumnLayout {
+        visible: detail.background.length > 0
+        Layout.fillWidth: true
+        spacing: 0
+        PlasmaComponents3.Label {
+            text: i18n("Running in the background; Claude picks up when it finishes:")
+            font: Kirigami.Theme.smallFont
+            opacity: 0.7
+            wrapMode: Text.Wrap
+            Layout.fillWidth: true
+        }
+        Repeater {
+            model: detail.background
+            delegate: PlasmaComponents3.Label {
+                required property string modelData
+                text: "◐ " + modelData
+                color: detail.deckRoot.statusColor("background", true)
+                font.family: "monospace"
+                font.pointSize: Kirigami.Theme.smallFont.pointSize
+                elide: Text.ElideRight
+                Layout.fillWidth: true
+            }
+        }
     }
 
     // Claude's latest message, rendered as the Markdown it is.

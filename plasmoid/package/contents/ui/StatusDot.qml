@@ -1,6 +1,7 @@
 /*
- * The status light. Working breathes; needs-you pings (the light dips as a ripple
- * leaves it); an unseen your-turn sends a slow ripple; seen states sit still.
+ * The status light. Working breathes; background work breathes slower and shallower
+ * (busy, but not with you); needs-you pings (the light dips as a ripple leaves it);
+ * an unseen your-turn sends a slow ripple; seen states sit still.
  * Every rhythm is a multiple of one 1.2 s beat, so lights side by side keep time
  * with each other and with the island's glow instead of drifting in and out.
  * Nothing loops while the light is off screen (a closed popup, a hidden tooltip)
@@ -23,6 +24,7 @@ Item {
     readonly property bool needsYou: status === "needs_you"
     readonly property bool waiting: status === "your_turn" && !seen
     readonly property bool exited: status === "exited"
+    readonly property bool background: status === "background"
     readonly property bool calling: needsYou || waiting
 
     /// On screen, with animations on.
@@ -79,12 +81,14 @@ Item {
 
     SequentialAnimation {
         id: breathe
-        running: dot.working && dot.live
+        running: (dot.working || dot.background) && dot.live
         loops: Animation.Infinite
-        NumberAnimation { target: dot; property: "pulse"; to: 0.45; duration: 1200; easing.type: Easing.InOutSine }
-        NumberAnimation { target: dot; property: "pulse"; to: 1; duration: 1200; easing.type: Easing.InOutSine }
+        NumberAnimation { target: dot; property: "pulse"; to: dot.background ? 0.6 : 0.45; duration: dot.background ? 2400 : 1200; easing.type: Easing.InOutSine }
+        NumberAnimation { target: dot; property: "pulse"; to: 1; duration: dot.background ? 2400 : 1200; easing.type: Easing.InOutSine }
         onRunningChanged: if (!running) dot.pulse = 1
     }
+    // Breathing from working to background (Claude ended its turn) starts a fresh breath.
+    onBackgroundChanged: if (breathe.running) breathe.restart()
 
     // A new rhythm (a minute of waiting) starts on a fresh cycle, not mid-ring.
     onPeriodChanged: if (call.running) call.restart()
@@ -96,7 +100,7 @@ Item {
         height: width
         radius: width / 2
         color: dot.color
-        opacity: dot.calling ? 0.22 : (dot.working ? 0.12 : 0)
+        opacity: dot.calling ? 0.22 : (dot.working ? 0.12 : (dot.background ? 0.08 : 0))
         Behavior on opacity { NumberAnimation { duration: Kirigami.Units.longDuration; easing.type: Easing.InOutQuad } }
     }
 

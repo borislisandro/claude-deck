@@ -110,7 +110,7 @@ Rectangle {
             }
             // One chip per state present, most urgent first.
             Repeater {
-                model: ["needs_you", "your_turn", "working", "exited"]
+                model: ["needs_you", "your_turn", "working", "background", "exited"]
                 delegate: Chip {
                     required property string modelData
                     readonly property int n: card.group.counts[modelData] || 0

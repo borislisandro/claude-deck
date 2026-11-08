@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 520" width="980" height="520" role="img" aria-label="The deck: a kitty window with tabs whose titles show each tab's sessions. The first tab is split: on the left Claude waits for permission to deploy, on the right another session is still working">
+<rect width="980" height="520" rx="12" fill="#1a1415"/>
+<path d="M0 12a12 12 0 0 1 12-12h956a12 12 0 0 1 12 12v24H0z" fill="#2a2224"/>
+<svg x="12" y="7" width="22" height="22" viewBox="0 0 128 128">
+  <defs>
+    <filter id="soft" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="2"/></filter>
+    <linearGradient id="face" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#faf9f5"/><stop offset="1" stop-color="#e8e4d8"/>
+    </linearGradient>
+  </defs>
+  <g transform="translate(15 3) scale(0.88)">
+  <g transform="rotate(-20 75 146.0)"><rect x="36.5" y="12.5" width="80" height="106" rx="11" fill="#000" fill-opacity="0.28" filter="url(#soft)"/></g>
+  <g transform="rotate(-20 75 146.0)"><rect x="35.0" y="10.0" width="80" height="106" rx="11" fill="#a9533a"/><rect x="40.0" y="15.0" width="70" height="96" rx="7" fill="none" stroke="#d97757" stroke-width="1.5" stroke-opacity="0.55"/></g>
+  <g transform="rotate(-10 75 146.0)"><rect x="36.5" y="12.5" width="80" height="106" rx="11" fill="#000" fill-opacity="0.28" filter="url(#soft)"/></g>
+  <g transform="rotate(-10 75 146.0)"><rect x="35.0" y="10.0" width="80" height="106" rx="11" fill="#d97757"/><rect x="40.0" y="15.0" width="70" height="96" rx="7" fill="none" stroke="#f2b9a3" stroke-width="1.5" stroke-opacity="0.55"/></g>
+  <g transform="rotate(0 75 146.0)"><rect x="36.5" y="12.5" width="80" height="106" rx="11" fill="#000" fill-opacity="0.28" filter="url(#soft)"/></g>
+  <g transform="rotate(0 75 146.0)"><rect x="35.0" y="10.0" width="80" height="106" rx="11" fill="url(#face)"/><rect x="35.5" y="10.5" width="79" height="105" rx="10.5" fill="none" stroke="#a9533a" stroke-opacity="0.18"/></g>
+  <g>
+    <path fill="#5fbf7a" d="M66.9 50.7h5.4v5.4h-5.4z"/>
+    <path fill="#a9533a" d="M66.9 56.1h5.4v5.4h-5.4zM56.1 88.5h5.4v5.4h-5.4zM66.9 88.5h5.4v5.4h-5.4zM77.7 88.5h5.4v5.4h-5.4zM88.5 88.5h5.4v5.4h-5.4zM56.1 93.9h5.4v5.4h-5.4zM66.9 93.9h5.4v5.4h-5.4zM77.7 93.9h5.4v5.4h-5.4zM88.5 93.9h5.4v5.4h-5.4z"/>
+    <path fill="#d97757" d="M50.7 61.5h5.4v5.4h-5.4zM56.1 61.5h5.4v5.4h-5.4zM61.5 61.5h5.4v5.4h-5.4zM66.9 61.5h5.4v5.4h-5.4zM72.3 61.5h5.4v5.4h-5.4zM77.7 61.5h5.4v5.4h-5.4zM83.1 61.5h5.4v5.4h-5.4zM88.5 61.5h5.4v5.4h-5.4zM93.9 61.5h5.4v5.4h-5.4zM50.7 66.9h5.4v5.4h-5.4zM56.1 66.9h5.4v5.4h-5.4zM66.9 66.9h5.4v5.4h-5.4zM72.3 66.9h5.4v5.4h-5.4zM77.7 66.9h5.4v5.4h-5.4zM88.5 66.9h5.4v5.4h-5.4zM93.9 66.9h5.4v5.4h-5.4zM45.3 72.3h5.4v5.4h-5.4zM50.7 72.3h5.4v5.4h-5.4zM56.1 72.3h5.4v5.4h-5.4zM61.5 72.3h5.4v5.4h-5.4zM66.9 72.3h5.4v5.4h-5.4zM72.3 72.3h5.4v5.4h-5.4zM77.7 72.3h5.4v5.4h-5.4zM83.1 72.3h5.4v5.4h-5.4zM88.5 72.3h5.4v5.4h-5.4zM93.9 72.3h5.4v5.4h-5.4zM99.3 72.3h5.4v5.4h-5.4zM50.7 77.7h5.4v5.4h-5.4zM56.1 77.7h5.4v5.4h-5.4zM61.5 77.7h5.4v5.4h-5.4zM66.9 77.7h5.4v5.4h-5.4zM72.3 77.7h5.4v5.4h-5.4zM77.7 77.7h5.4v5.4h-5.4zM83.1 77.7h5.4v5.4h-5.4zM88.5 77.7h5.4v5.4h-5.4zM93.9 77.7h5.4v5.4h-5.4zM50.7 83.1h5.4v5.4h-5.4zM56.1 83.1h5.4v5.4h-5.4zM61.5 83.1h5.4v5.4h-5.4zM66.9 83.1h5.4v5.4h-5.4zM72.3 83.1h5.4v5.4h-5.4zM77.7 83.1h5.4v5.4h-5.4zM83.1 83.1h5.4v5.4h-5.4zM88.5 83.1h5.4v5.4h-5.4zM93.9 83.1h5.4v5.4h-5.4z"/>
+    <path fill="#1b1112" d="M61.5 66.9h5.4v5.4h-5.4zM83.1 66.9h5.4v5.4h-5.4z"/>
+    <path fill="#a9533a" d="M44 19h2.8v2.8h-2.8zM46.8 19h2.8v2.8h-2.8zM49.6 19h2.8v2.8h-2.8zM52.4 19h2.8v2.8h-2.8zM44 21.8h2.8v2.8h-2.8zM46.8 21.8h2.8v2.8h-2.8zM52.4 21.8h2.8v2.8h-2.8zM55.2 21.8h2.8v2.8h-2.8zM44 24.6h2.8v2.8h-2.8zM46.8 24.6h2.8v2.8h-2.8zM52.4 24.6h2.8v2.8h-2.8zM55.2 24.6h2.8v2.8h-2.8zM44 27.4h2.8v2.8h-2.8zM46.8 27.4h2.8v2.8h-2.8zM52.4 27.4h2.8v2.8h-2.8zM55.2 27.4h2.8v2.8h-2.8zM44 30.2h2.8v2.8h-2.8zM46.8 30.2h2.8v2.8h-2.8zM52.4 30.2h2.8v2.8h-2.8zM55.2 30.2h2.8v2.8h-2.8zM44 33h2.8v2.8h-2.8zM46.8 33h2.8v2.8h-2.8zM52.4 33h2.8v2.8h-2.8zM55.2 33h2.8v2.8h-2.8zM44 35.8h2.8v2.8h-2.8zM46.8 35.8h2.8v2.8h-2.8zM49.6 35.8h2.8v2.8h-2.8zM52.4 35.8h2.8v2.8h-2.8z"/><path fill="#d97757" d="M49.6 42.4h2.8v2.8h-2.8zM44 45.2h2.8v2.8h-2.8zM49.6 45.2h2.8v2.8h-2.8zM55.2 45.2h2.8v2.8h-2.8zM46.8 48h2.8v2.8h-2.8zM49.6 48h2.8v2.8h-2.8zM52.4 48h2.8v2.8h-2.8zM44 50.8h2.8v2.8h-2.8zM49.6 50.8h2.8v2.8h-2.8zM55.2 50.8h2.8v2.8h-2.8zM49.6 53.6h2.8v2.8h-2.8z"/>
+  </g>
+  </g>
+</svg>
+<text x="490.0" y="23" text-anchor="middle" fill="#e8dfe0" font-family="Inter, Noto Sans, sans-serif" font-size="13.5" font-weight="600">Claude Deck</text>
+<path transform="translate(904,18)" d="M0 0h10" stroke="#9a8a8c" stroke-width="1.5" fill="none"/>
+<path transform="translate(928,13)" d="M0 0h10v10h-10z" stroke="#9a8a8c" stroke-width="1.5" fill="none"/>
+<path transform="translate(952,13)" d="M0 0l10 10M10 0l-10 10" stroke="#9a8a8c" stroke-width="1.5" fill="none"/>
+<rect y="36" width="980" height="28" fill="#150f10"/>
+<rect x="0" y="36" width="215.5" height="28" fill="#3a2c2f"/>
+<text x="14" y="54.5" font-family="JetBrains Mono, Noto Sans Mono, DejaVu Sans Mono, monospace" font-size="12.5" xml:space="preserve"><tspan fill="#f5a524">◆</tspan><tspan fill="#5fbf7a">●</tspan><tspan fill="#ffffff" font-weight="700"> 1 api +1</tspan><tspan fill="#9a8a8c"> · Opus 5.5</tspan><tspan fill="#f5a524"> 2m</tspan></text>
+<rect x="215.5" y="43" width="1" height="14" fill="#ffffff" fill-opacity="0.12"/>
+<rect x="215.5" y="36" width="208.0" height="28" fill="#4a141b"/>
+<text x="229.5" y="54.5" font-family="JetBrains Mono, Noto Sans Mono, DejaVu Sans Mono, monospace" font-size="12.5" xml:space="preserve"><tspan fill="#ff5a6a">●</tspan><tspan fill="#e8dfe0"> 3 docs</tspan><tspan fill="#9a8a8c"> · Sonnet 5.5</tspan><tspan fill="#ff5a6a"> 4m</tspan></text>
+<rect x="423.5" y="43" width="1" height="14" fill="#ffffff" fill-opacity="0.12"/>
+<text x="437.5" y="54.5" font-family="JetBrains Mono, Noto Sans Mono, DejaVu Sans Mono, monospace" font-size="12.5" xml:space="preserve"><tspan fill="#b03e49">○</tspan><tspan fill="#e8dfe0"> 4 infra</tspan><tspan fill="#9a8a8c"> · Opus 5.5</tspan></text>
+<rect x="601.5" y="43" width="1" height="14" fill="#ffffff" fill-opacity="0.12"/>
+<text x="615.5" y="54.5" font-family="JetBrains Mono, Noto Sans Mono, DejaVu Sans Mono, monospace" font-size="12.5" xml:space="preserve"><tspan fill="#5fbf7a">●</tspan><tspan fill="#e8dfe0"> 5 ml-pipeline</tspan><tspan fill="#9a8a8c"> · Sonnet 5.5</tspan></text>
+<rect x="839.5" y="43" width="1" height="14" fill="#ffffff" fill-opacity="0.12"/>
+<rect x="490.0" y="64" width="1" height="456" fill="#3a2f31"/>
+<text x="18" y="94" font-family="JetBrains Mono, Noto Sans Mono, DejaVu Sans Mono, monospace" font-size="12.5" xml:space="preserve"><tspan fill="#9a8a8c">&gt; </tspan><tspan fill="#e8dfe0">Put the new rate limiter behind a feature flag</tspan></text>
+<text x="18" y="132" font-family="JetBrains Mono, Noto Sans Mono, DejaVu Sans Mono, monospace" font-size="12.5" xml:space="preserve"><tspan fill="#5fbf7a">● </tspan><tspan fill="#e8dfe0" font-weight="700">Update</tspan><tspan fill="#e8dfe0">(src/limiter.rs)</tspan></text>
+<text x="18" y="151" font-family="JetBrains Mono, Noto Sans Mono, DejaVu Sans Mono, monospace" font-size="12.5" xml:space="preserve"><tspan fill="#9a8a8c">  ⎿  Updated src/limiter.rs with 42 additions</tspan></text>
+<text x="18" y="170" font-family="JetBrains Mono, Noto Sans Mono, DejaVu Sans Mono, monospace" font-size="12.5" xml:space="preserve"><tspan fill="#5fbf7a">● </tspan><tspan fill="#e8dfe0" font-weight="700">Bash</tspan><tspan fill="#e8dfe0">(cargo test limiter)</tspan></text>
+<text x="18" y="189" font-family="JetBrains Mono, Noto Sans Mono, DejaVu Sans Mono, monospace" font-size="12.5" xml:space="preserve"><tspan fill="#9a8a8c">  ⎿  test result: ok. 18 passed; 0 failed</tspan></text>
+<text x="18" y="208" font-family="JetBrains Mono, Noto Sans Mono, DejaVu Sans Mono, monospace" font-size="12.5" xml:space="preserve"><tspan fill="#f5a524">● </tspan><tspan fill="#e8dfe0" font-weight="700">Bash</tspan><tspan fill="#e8dfe0">(make deploy-staging)</tspan></text>
+<rect x="12" y="223" width="466.0" height="166" rx="6" fill="none" stroke="#f5a524" stroke-opacity="0.7" shape-rendering="geometricPrecision"/>
+<text x="24" y="247" font-family="JetBrains Mono, Noto Sans Mono, DejaVu Sans Mono, monospace" font-size="12.5" xml:space="preserve"><tspan fill="#f5a524" font-weight="700">Bash command</tspan></text>
+<text x="24" y="266" font-family="JetBrains Mono, Noto Sans Mono, DejaVu Sans Mono, monospace" font-size="12.5" xml:space="preserve"><tspan fill="#e8dfe0">  make deploy-staging</tspan></text>
+<text x="24" y="285" font-family="JetBrains Mono, Noto Sans Mono, DejaVu Sans Mono, monospace" font-size="12.5" xml:space="preserve"><tspan fill="#9a8a8c">  Deploy the flagged build to staging</tspan></text>
+<text x="24" y="323" font-family="JetBrains Mono, Noto Sans Mono, DejaVu Sans Mono, monospace" font-size="12.5" xml:space="preserve"><tspan fill="#e8dfe0">Do you want to proceed?</tspan></text>
+<text x="24" y="342" font-family="JetBrains Mono, Noto Sans Mono, DejaVu Sans Mono, monospace" font-size="12.5" xml:space="preserve"><tspan fill="#f5a524" font-weight="700">&gt; 1. Yes</tspan></text>
+<text x="24" y="361" font-family="JetBrains Mono, Noto Sans Mono, DejaVu Sans Mono, monospace" font-size="12.5" xml:space="preserve"><tspan fill="#e8dfe0">  2. Yes, and don’t ask again this session</tspan></text>
+<text x="24" y="380" font-family="JetBrains Mono, Noto Sans Mono, DejaVu Sans Mono, monospace" font-size="12.5" xml:space="preserve"><tspan fill="#e8dfe0">  3. No, and tell Claude what to do</tspan></text>
+<text x="508.0" y="94" font-family="JetBrains Mono, Noto Sans Mono, DejaVu Sans Mono, monospace" font-size="12.5" xml:space="preserve"><tspan fill="#9a8a8c">&gt; </tspan><tspan fill="#e8dfe0">Wire the checkout page to the pricing API</tspan></text>
+<text x="508.0" y="132" font-family="JetBrains Mono, Noto Sans Mono, DejaVu Sans Mono, monospace" font-size="12.5" xml:space="preserve"><tspan fill="#5fbf7a">● </tspan><tspan fill="#e8dfe0" font-weight="700">Read</tspan><tspan fill="#e8dfe0">(src/pages/Checkout.tsx)</tspan></text>
+<text x="508.0" y="151" font-family="JetBrains Mono, Noto Sans Mono, DejaVu Sans Mono, monospace" font-size="12.5" xml:space="preserve"><tspan fill="#9a8a8c">  ⎿  Read 214 lines</tspan></text>
+<text x="508.0" y="170" font-family="JetBrains Mono, Noto Sans Mono, DejaVu Sans Mono, monospace" font-size="12.5" xml:space="preserve"><tspan fill="#5fbf7a">● </tspan><tspan fill="#e8dfe0" font-weight="700">Update</tspan><tspan fill="#e8dfe0">(src/pages/Checkout.tsx)</tspan></text>
+<text x="508.0" y="189" font-family="JetBrains Mono, Noto Sans Mono, DejaVu Sans Mono, monospace" font-size="12.5" xml:space="preserve"><tspan fill="#9a8a8c">  ⎿  Updated with 31 additions and 12 removals</tspan></text>
+<text x="508.0" y="208" font-family="JetBrains Mono, Noto Sans Mono, DejaVu Sans Mono, monospace" font-size="12.5" xml:space="preserve"><tspan fill="#5fbf7a">● </tspan><tspan fill="#e8dfe0" font-weight="700">Bash</tspan><tspan fill="#e8dfe0">(npm test -- checkout)</tspan></text>
+<text x="508.0" y="227" font-family="JetBrains Mono, Noto Sans Mono, DejaVu Sans Mono, monospace" font-size="12.5" xml:space="preserve"><tspan fill="#9a8a8c">  ⎿  Running…</tspan></text>
+<text x="508.0" y="265" font-family="JetBrains Mono, Noto Sans Mono, DejaVu Sans Mono, monospace" font-size="12.5" xml:space="preserve"><tspan fill="#d97757">✻ Wiring… </tspan><tspan fill="#9a8a8c">(esc to interrupt)</tspan></text>
+<rect x="502.0" y="442" width="460.0" height="30" rx="6" fill="none" stroke="#6b5f60" shape-rendering="geometricPrecision"/>
+<text x="514.0" y="462" font-family="JetBrains Mono, Noto Sans Mono, DejaVu Sans Mono, monospace" font-size="12.5" xml:space="preserve"><tspan fill="#9a8a8c">&gt; </tspan></text>
+<rect x="529.0" y="450" width="7.5" height="15" fill="#e8dfe0" fill-opacity="0.8"/>
+<text x="18" y="498" font-family="JetBrains Mono, Noto Sans Mono, DejaVu Sans Mono, monospace" font-size="11.5" xml:space="preserve"><tspan fill="#9a8a8c">5h 23% (2h 10m) · 7d 41% (3d 2h)</tspan></text>
+<text x="508.0" y="498" font-family="JetBrains Mono, Noto Sans Mono, DejaVu Sans Mono, monospace" font-size="11.5" xml:space="preserve"><tspan fill="#9a8a8c">5h 23% (2h 10m) · 7d 41% (3d 2h)</tspan></text>
+</svg>

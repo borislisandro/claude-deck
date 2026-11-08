@@ -10,6 +10,7 @@ mod locked;
 mod notify;
 mod paths;
 mod picker;
+mod procs;
 mod proto;
 mod run_session;
 mod state;
@@ -282,6 +283,7 @@ fn format_ls(v: &Value, color: bool) -> Vec<String> {
                 ("needs_you", _) => ("33", "◆"),
                 ("your_turn", false) => ("31", "◉"),
                 ("your_turn", true) => ("31", "●"),
+                ("background", _) => ("35", "◐"),
                 _ => ("90", "○"),
             };
             let detail = s["error"].as_str().or(s["last_action"].as_str()).unwrap_or("");

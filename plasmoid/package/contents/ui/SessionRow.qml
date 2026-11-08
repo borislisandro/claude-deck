@@ -22,7 +22,8 @@ Rectangle {
     property bool lit: false
 
     readonly property color tint: deckRoot.statusColor(session.status, session.seen)
-    readonly property bool busy: session.status === "working" || session.status === "needs_you"
+    // Closing asks first while Claude is at work, or has work running in the background.
+    readonly property bool busy: session.status === "working" || session.status === "needs_you" || session.status === "background"
     readonly property bool hot: hover.hovered
     readonly property bool open: deckRoot.isOpen(session.sid)
 

@@ -21,6 +21,7 @@ const MUTED: Color = Color::Rgb(0x9a, 0x8a, 0x8c);
 const GREEN: Color = Color::Rgb(0x5f, 0xbf, 0x7a);
 const YELLOW: Color = Color::Rgb(0xf5, 0xa5, 0x24);
 const RED: Color = Color::Rgb(0xff, 0x5a, 0x6a);
+const PURPLE: Color = Color::Rgb(0xb0, 0x4c, 0xff);
 const GREY: Color = Color::Rgb(0x7a, 0x6a, 0x6c);
 
 #[derive(Clone, Debug)]
@@ -320,6 +321,7 @@ pub fn status_color(status: &str, seen: bool) -> Color {
         ("needs_you", _) => YELLOW,
         ("your_turn", false) => RED,
         ("your_turn", true) => Color::Rgb(0xa8, 0x50, 0x5a),
+        ("background", _) => PURPLE,
         _ => GREY,
     }
 }
@@ -473,6 +475,7 @@ mod tests {
         assert_eq!(status_color("needs_you", true), YELLOW);
         assert_eq!(status_color("your_turn", false), RED);
         assert_ne!(status_color("your_turn", true), RED, "seen is dimmer");
+        assert_eq!(status_color("background", false), PURPLE);
         assert_eq!(status_color("exited", true), GREY);
         assert_eq!(status_color("???", true), GREY);
     }

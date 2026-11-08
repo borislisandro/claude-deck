@@ -17,6 +17,7 @@ KCM.SimpleKCM {
     property alias cfg_colorWorking: colorWorking.text
     property alias cfg_colorNeedsYou: colorNeedsYou.text
     property alias cfg_colorYourTurn: colorYourTurn.text
+    property alias cfg_colorBackground: colorBackground.text
     property alias cfg_colorExited: colorExited.text
 
     Kirigami.FormLayout {
@@ -67,6 +68,7 @@ KCM.SimpleKCM {
         QQC2.TextField { id: colorWorking; Kirigami.FormData.label: i18n("Working:") }
         QQC2.TextField { id: colorNeedsYou; Kirigami.FormData.label: i18n("Needs you:") }
         QQC2.TextField { id: colorYourTurn; Kirigami.FormData.label: i18n("Your turn:") }
+        QQC2.TextField { id: colorBackground; Kirigami.FormData.label: i18n("In background:") }
         QQC2.TextField { id: colorExited; Kirigami.FormData.label: i18n("Exited:") }
 
         Item { Kirigami.FormData.isSection: true }

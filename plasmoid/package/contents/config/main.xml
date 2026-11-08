@@ -43,6 +43,7 @@
     <entry name="colorWorking" type="String"><default>#5fbf7a</default></entry>
     <entry name="colorNeedsYou" type="String"><default>#f5a524</default></entry>
     <entry name="colorYourTurn" type="String"><default>#ff5a6a</default></entry>
+    <entry name="colorBackground" type="String"><default>#b04cff</default></entry>
     <entry name="colorExited" type="String"><default>#8a7a7c</default></entry>
   </group>
 </kcfg>

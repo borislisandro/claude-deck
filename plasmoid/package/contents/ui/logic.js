@@ -7,6 +7,8 @@ function urgency(s) {
     if (s.status === "needs_you") return s.seen ? 1 : 0
     if (s.status === "your_turn") return s.seen ? 4 : 2
     if (s.status === "working") return 3
+    // Busy without you: below working, above a your-turn you've already seen.
+    if (s.status === "background") return 3.5
     return 5
 }
 
@@ -28,7 +30,7 @@ function groupSessions(sessions) {
     }
     for (const g of out) {
         g.top = g.sessions.slice().sort((a, b) => urgency(a) - urgency(b) || a.since - b.since)[0]
-        g.counts = { working: 0, needs_you: 0, your_turn: 0, exited: 0 }
+        g.counts = { working: 0, needs_you: 0, your_turn: 0, background: 0, exited: 0 }
         for (const s of g.sessions) g.counts[s.status] = (g.counts[s.status] || 0) + 1
         const models = [...new Set(g.sessions.map(s => s.model || ""))]
         // A model for the whole tab only makes sense when every session agrees.
@@ -59,6 +61,36 @@ function elapsed(ms) {
     return Math.floor(s / 3600) + "h" + (m < 10 ? "0" : "") + m
 }
 
+/// "2d 3h", "2h 10m", "35m", "<1m" for a duration in milliseconds (as the deck's
+/// status line writes it).
+function span(ms) {
+    const s = Math.max(0, Math.floor(ms / 1000))
+    const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60)
+    if (d > 0) return d + "d " + h + "h"
+    if (h > 0) return h + "h " + m + "m"
+    if (m > 0) return m + "m"
+    return "<1m"
+}
+
+/// The 5-hour and weekly limits, for the popup: [{ key, label, known, left (percent
+/// left, whole), resetsIn (ms), level }]. The level is "ok" from half left up,
+/// "half" under 50% left, "low" under 20% and "out" once nothing is left. `usage` is the
+/// daemon's { five_hour: { used, resets_at (s) }, seven_day: … }; a window whose reset
+/// time has passed is full again. Empty while no window is known at all.
+function usageMeters(usage, nowMs) {
+    const kinds = [["five_hour", "5-hour"], ["seven_day", "Weekly"]]
+    const u = usage || {}
+    if (!kinds.some(k => u[k[0]])) return []
+    return kinds.map(([key, label]) => {
+        const w = u[key]
+        if (!w || typeof w.used !== "number") return { key, label, known: false, left: 0, resetsIn: 0, level: "ok" }
+        const resetsIn = Math.max(0, (w.resets_at || 0) * 1000 - nowMs)
+        const left = resetsIn > 0 ? Math.max(0, Math.min(100, Math.round(100 - w.used))) : 100
+        const level = left <= 0 ? "out" : left < 20 ? "low" : left < 50 ? "half" : "ok"
+        return { key, label, known: true, left, resetsIn, level }
+    })
+}
+
 /// One shell word, whatever it contains.
 function shellQuote(s) {
     return "'" + String(s).replace(/'/g, "'\\''") + "'"
@@ -69,6 +101,26 @@ function islandMode(sessionCount, groupCount, collapseAfter) {
     if (sessionCount <= collapseAfter) return "sessions"
     if (groupCount <= collapseAfter) return "tabs"
     return "counts"
+}
+
+/// What the popup header's critter does. It belongs to no session, so it sums up
+/// the whole deck in moods of its own (`counts` as the daemon sends them):
+///   exited    the deck isn't running
+///   idle      no live sessions
+///   waving    someone needs you (it wins over everything else)
+///   juggling  every session is working (or waits on its background work)
+///   typing    some are working, the rest wait for your next prompt
+///   coffee    every session waits for your next prompt
+function deckMood(running, counts) {
+    if (!running) return "exited"
+    const c = counts || {}
+    // Background work keeps a session busy without you, like working does.
+    const working = (c.working || 0) + (c.background || 0), needsYou = c.needs_you || 0, yourTurn = c.your_turn || 0
+    if (working + needsYou + yourTurn === 0) return "idle"
+    if (needsYou > 0) return "waving"
+    if (yourTurn === 0) return "juggling"
+    if (working > 0) return "typing"
+    return "coffee"
 }
 
 /// Popup height in grid units, estimated from what it will show (`open`: the

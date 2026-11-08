@@ -13,11 +13,13 @@ COLORS = {
     'needs_you': 'f5a524',
     'your_turn': 'ff5a6a',
     'your_turn_seen': 'a8505a',
+    'background': 'b04cff',
     'exited': '7a6a6c',
 }
 # Lower is more urgent; the tab shows its most urgent session.
-RANK = {'needs_you': 0, 'your_turn': 1, 'working': 2, 'your_turn_seen': 3, 'exited': 4}
-GLYPH = {'working': '●', 'needs_you': '◆', 'your_turn': '●', 'your_turn_seen': '○', 'exited': '◌'}
+RANK = {'needs_you': 0, 'your_turn': 1, 'working': 2, 'background': 3, 'your_turn_seen': 4, 'exited': 5}
+# Background: Claude's turn is over but it left work running, and comes back by itself.
+GLYPH = {'working': '●', 'needs_you': '◆', 'your_turn': '●', 'your_turn_seen': '○', 'background': '◐', 'exited': '◌'}
 
 
 def _state() -> dict:

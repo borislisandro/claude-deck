@@ -22,6 +22,8 @@ PlasmoidItem {
     readonly property int unseen: deck.unseen || 0
     readonly property string focusedSid: deck.focused_sid || ""
     property real now: Date.now()
+    /// What is left of the 5-hour and weekly limits (empty until a session reports them).
+    readonly property var usageMeters: running ? Logic.usageMeters(deck.usage, now) : []
 
     /// Stands in for a session in a delegate that is about to go away. Repeaters
     /// are driven by counts (so delegates survive updates); when the count drops, a
@@ -180,6 +182,7 @@ PlasmoidItem {
         case "working": return Plasmoid.configuration.colorWorking
         case "needs_you": return Plasmoid.configuration.colorNeedsYou
         case "your_turn": return seen ? Qt.darker(Plasmoid.configuration.colorYourTurn, 1.45) : Plasmoid.configuration.colorYourTurn
+        case "background": return Plasmoid.configuration.colorBackground
         default: return Plasmoid.configuration.colorExited
         }
     }
@@ -190,6 +193,8 @@ PlasmoidItem {
         case "working": return "running"
         case "needs_you": return "thinking"
         case "your_turn": return "resting"
+        // Awake and looking around: the computer is on it, nothing waits on you.
+        case "background": return "idle"
         default: return "exited"
         }
     }
@@ -199,6 +204,7 @@ PlasmoidItem {
         case "working": return i18n("Working")
         case "needs_you": return i18n("Needs you")
         case "your_turn": return i18n("Your turn")
+        case "background": return i18n("In background")
         default: return i18n("Exited")
         }
     }

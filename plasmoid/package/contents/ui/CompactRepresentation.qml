@@ -33,7 +33,10 @@ Item {
         ? (deckRoot.deck.counts && deckRoot.deck.counts.needs_you > 0 ? Plasmoid.configuration.colorNeedsYou : Plasmoid.configuration.colorYourTurn)
         : "transparent"
 
-    visible: running
+    // Not `visible: running` here: Plasma's CompactApplet sets this item's visible to
+    // true when it adopts it, which breaks that binding for good, and the pill (centered,
+    // unclipped) then spills out of the zero width as a lone idle critter. The children
+    // carry it instead.
     // Follows the pill, which animates its own width: animating this too would chase
     // a moving target and lag behind it.
     readonly property real wantedWidth: running ? pill.width + Kirigami.Units.smallSpacing : 0
@@ -46,6 +49,7 @@ Item {
     // does nothing: the popup has its own button, and critters own the space around them.
     MouseArea {
         anchors.fill: parent
+        visible: compact.running
         acceptedButtons: Qt.LeftButton | Qt.MiddleButton
         onClicked: mouse => {
             if (mouse.button === Qt.MiddleButton) {
@@ -64,6 +68,7 @@ Item {
 
     Rectangle {
         id: pill
+        visible: compact.running
         anchors.centerIn: parent
         height: Math.min(compact.height, Math.max(Math.round(compact.height * 0.74), compact.px * 11 + 4))
         width: content.implicitWidth + compact.pad * 2
@@ -173,6 +178,7 @@ Item {
                     { key: "needs_you", seen: false },
                     { key: "your_turn", seen: false },
                     { key: "working", seen: true },
+                    { key: "background", seen: true },
                     { key: "exited", seen: true }
                 ] : []
                 delegate: RowLayout {

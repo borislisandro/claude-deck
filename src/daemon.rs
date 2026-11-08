@@ -214,6 +214,7 @@ pub async fn run(cwd: Option<PathBuf>, demo: bool, adopt_kitty: Option<u32>) -> 
         supervise("interrupt", sh.clone(), interrupt_loop);
         supervise("model", sh.clone(), model_loop);
         supervise("focus", sh.clone(), focus_loop);
+        supervise("background", sh.clone(), background_loop);
     } else {
         let start_dir = cwd.clone().unwrap_or_else(paths::home);
         let exe = paths::self_exe().display().to_string();
@@ -237,6 +238,7 @@ pub async fn run(cwd: Option<PathBuf>, demo: bool, adopt_kitty: Option<u32>) -> 
         supervise("interrupt", sh.clone(), interrupt_loop);
         supervise("model", sh.clone(), model_loop);
         supervise("focus", sh.clone(), focus_loop);
+        supervise("background", sh.clone(), background_loop);
     }
     supervise("reminder", sh.clone(), reminder_loop);
     supervise("usage", sh.clone(), usage_loop);
@@ -376,7 +378,7 @@ fn state_json(sh: &Sh) -> Value {
         "rev": st.rev,
         "now": now_ms(),
         "summary": st.summary(),
-        "counts": { "working": c[0], "needs_you": c[1], "your_turn": c[2], "exited": c[3] },
+        "counts": { "working": c[0], "needs_you": c[1], "your_turn": c[2], "exited": c[3], "background": c[4] },
         "usage": sh.usage.locked().json(),
         "unseen": st.sessions.iter().filter(|s| !s.seen).count(),
         "focused_sid": focused,
@@ -531,9 +533,24 @@ async fn new_session(sh: &Sh, cwd: Option<String>, placement: Placement, pick: b
 async fn handle(sh: &Sh, req: Request) -> Result<Value> {
     let now = now_ms();
     match req {
-        Request::Hook { sid, kitty_window, payload } => {
+        Request::Hook { sid, kitty_window, payload, claude_pid } => {
             let event = payload.get("hook_event_name").and_then(Value::as_str).unwrap_or("").to_string();
-            let t = sh.store.locked().apply_hook(&sid, kitty_window, &payload, now);
+            // Whether the turn that ends leaves work running decides between red and purple.
+            let shells = (event == "Stop")
+                .then(|| claude_pid.or_else(|| sh.store.locked().get(&sid).and_then(|s| s.claude_pid)))
+                .flatten()
+                .map(crate::procs::background_shells);
+            let t = {
+                let mut st = sh.store.locked();
+                if let Some(shells) = shells {
+                    st.set_shells(&sid, shells);
+                }
+                let t = st.apply_hook(&sid, kitty_window, &payload, now);
+                if let Some(pid) = claude_pid {
+                    st.set_claude_pid(&sid, pid);
+                }
+                t
+            };
             if matches!(event.as_str(), "SessionStart" | "Stop" | "UserPromptSubmit") {
                 refresh_branch(sh, &sid);
             }
@@ -741,7 +758,7 @@ async fn handle(sh: &Sh, req: Request) -> Result<Value> {
             let (busy, name) = {
                 let st = sh.store.locked();
                 match st.by_window(kitty_window) {
-                    Some(s) => (s.status == Status::Working, format!("#{} {}", s.index, s.project)),
+                    Some(s) => (matches!(s.status, Status::Working | Status::Background), format!("#{} {}", s.index, s.project)),
                     None => (false, String::new()),
                 }
             };
@@ -811,7 +828,8 @@ async fn handle(sh: &Sh, req: Request) -> Result<Value> {
 }
 
 async fn close_window(win: u64, status: Status) -> Result<Value> {
-    let st = if status == Status::Working { "working" } else { "idle" };
+    // Closing the pane also stops what Claude left running in the background.
+    let st = if matches!(status, Status::Working | Status::Background) { "working" } else { "idle" };
     kitty::kitten(&["close", &win.to_string(), st]).await?;
     Ok(json!({ "ok": true }))
 }
@@ -1439,6 +1457,57 @@ pub fn reminders_due(
     (due, phone_due)
 }
 
+/// Follow the sessions waiting on background work: what still runs, and when it has
+/// all finished without Claude picking up, that it is your turn after all.
+async fn background_loop(sh: Sh) {
+    let mut tick = tokio::time::interval(Duration::from_secs(2));
+    loop {
+        tick.tick().await;
+        // (sid, claude pid, pane, has background agents)
+        let waiting: Vec<(String, Option<u32>, Option<u64>, bool)> = {
+            let st = sh.store.locked();
+            st.sessions
+                .iter()
+                .filter(|s| s.status == Status::Background)
+                .map(|s| (s.sid.clone(), s.claude_pid, s.kitty_window, !s.bg_agents.is_empty()))
+                .collect()
+        };
+        if waiting.is_empty() {
+            continue;
+        }
+        let mut looked: Vec<(String, Vec<String>, bool)> = vec![];
+        for (sid, pid, win, agents) in waiting {
+            let shells = match pid {
+                Some(pid) => tokio::task::spawn_blocking(move || crate::procs::background_shells(pid)).await.unwrap_or_default(),
+                None => vec![],
+            };
+            // Once nothing runs any more, has Claude woken up to look at the results?
+            let mut busy = false;
+            if shells.is_empty() && !agents {
+                if let Some(win) = win {
+                    if let Ok(text) = kitty::rc(&["get-text", &format!("--match=id:{win}"), "--extent=screen"]).await {
+                        busy = screen_shows_busy(&text);
+                    }
+                }
+            }
+            looked.push((sid, shells, busy));
+        }
+        let now = now_ms();
+        let (mut any, mut ts) = (false, vec![]);
+        {
+            let mut st = sh.store.locked();
+            for (sid, shells, busy) in looked {
+                let (moved, t) = st.settle(&sid, shells, busy, now);
+                any |= moved;
+                ts.extend(t);
+            }
+        }
+        if any {
+            changed(&sh, ts);
+        }
+    }
+}
+
 /// Re-notify (and optionally ping the phone) for sessions left waiting unseen.
 ///
 /// The reminder is for a session that is *blocked* on you, because that is work standing
@@ -1556,6 +1625,8 @@ async fn demo_loop(sh: Sh) {
         ("demo1", json!({"hook_event_name": "Stop"})),
         ("demo2", json!({"hook_event_name": "PostToolUse", "tool_name": "Bash"})),
         ("demo3", json!({"hook_event_name": "PreToolUse", "tool_name": "AskUserQuestion", "tool_input": {}})),
+        // Its turn ends with a build left running: purple, not red.
+        ("demo2", json!({"hook_event_name": "demo:shells", "shells": ["npm run build"]})),
         ("demo2", json!({"hook_event_name": "Stop"})),
         ("demo3", json!({"hook_event_name": "PostToolUse", "tool_name": "AskUserQuestion"})),
         ("demo3", json!({"hook_event_name": "StopFailure", "error": "rate_limit"})),
@@ -1565,6 +1636,12 @@ async fn demo_loop(sh: Sh) {
         tokio::time::sleep(Duration::from_secs(3)).await;
         let (sid, p) = &script[i % script.len()];
         let win = 1000 + sid[4..].parse::<u64>().unwrap_or(1) - 1;
+        if p["hook_event_name"] == "demo:shells" {
+            let shells = p["shells"].as_array().into_iter().flatten().filter_map(Value::as_str).map(String::from).collect();
+            sh.store.locked().set_shells(sid, shells);
+            i += 1;
+            continue;
+        }
         let t = sh.store.locked().apply_hook(sid, Some(win), p, now_ms());
         changed(&sh, t.into_iter().collect());
         i += 1;

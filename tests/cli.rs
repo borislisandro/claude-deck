@@ -197,6 +197,32 @@ fn a_background_agent_cannot_hide_a_pending_prompt() {
 }
 
 #[test]
+fn a_turn_that_leaves_an_agent_running_is_purple_not_red() {
+    let mut env = Env::new(QUIET);
+    env.start_demo();
+    let go = |ev: &str, extra: Value| {
+        let mut p = serde_json::json!({"hook_event_name": ev, "session_id": "c-bg", "cwd": "/"});
+        p.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
+        env.hook("bg", 32, p);
+    };
+    go("UserPromptSubmit", serde_json::json!({"prompt": "survey it"}));
+    go("PreToolUse", serde_json::json!({"tool_name": "Agent", "tool_input": {"description": "Survey the API"}}));
+    go("SubagentStart", serde_json::json!({"agent_id": "a-1", "agent_type": "general-purpose"}));
+    go("PostToolUse", serde_json::json!({"tool_name": "Agent"}));
+    go("Stop", serde_json::json!({}));
+    let s = env.session("bg");
+    assert_eq!((s["status"].as_str(), s["seen"].as_bool()), (Some("background"), Some(true)), "nothing to notify");
+    assert_eq!(s["last_action"], "Waiting on agent: Survey the API");
+    assert_eq!(s["bg_agents"][0]["what"], "Survey the API");
+    assert!(env.json(&["watch", "--once"])["counts"]["background"].as_u64().unwrap() >= 1);
+    // The agent finishes and Claude answers: now it is your turn.
+    go("SubagentStop", serde_json::json!({"agent_id": "a-1", "agent_type": "general-purpose"}));
+    go("Stop", serde_json::json!({}));
+    let s = env.session("bg");
+    assert_eq!((s["status"].as_str(), s["seen"].as_bool()), (Some("your_turn"), Some(false)));
+}
+
+#[test]
 fn watch_blocks_until_something_changes() {
     let mut env = Env::new(QUIET);
     env.start_demo();

@@ -2,3 +2,4 @@
 *.png
 __pycache__/
 *.pyc
+!docs/social-preview.png

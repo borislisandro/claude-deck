@@ -13,6 +13,7 @@ use crate::state::truncate;
 const KEEP: &[&str] = &[
     "hook_event_name", "session_id", "transcript_path", "cwd", "source", "reason",
     "tool_name", "notification_type", "message", "error", "trigger", "model", "agent_id",
+    "agent_type",
 ];
 const KEEP_INPUT: &[&str] = &["file_path", "notebook_path", "command", "description", "pattern", "query", "url"];
 
@@ -58,7 +59,8 @@ pub fn run() {
     let Ok(sid) = std::env::var("CLAUDE_DECK_SID") else { return };
     let Ok(payload) = serde_json::from_slice::<Value>(&buf) else { return };
     let kitty_window = std::env::var("KITTY_WINDOW_ID").ok().and_then(|w| w.parse().ok());
-    let req = Request::Hook { sid, kitty_window, payload: slim(&payload) };
+    let claude_pid = crate::procs::claude_ancestor(std::os::unix::process::parent_id(), &sid);
+    let req = Request::Hook { sid, kitty_window, payload: slim(&payload), claude_pid };
     // Wait for the daemon to apply it (well under a millisecond) before exiting.
     // Claude runs the next hook only after this one exits, so events land in order;
     // fired and forgotten, a Stop could overtake the PostToolUse before it and leave

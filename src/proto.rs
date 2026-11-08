@@ -49,7 +49,8 @@ impl Side {
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Request {
     // Reports from the pieces running inside kitty.
-    Hook { sid: String, kitty_window: Option<u64>, payload: Value },
+    /// `claude_pid`: the claude process the hook ran under (absent from older hooks).
+    Hook { sid: String, kitty_window: Option<u64>, payload: Value, #[serde(default)] claude_pid: Option<u32> },
     Register { sid: String, kitty_window: Option<u64>, cwd: String },
     Exited { sid: String, code: Option<i32> },
     Focus { kitty_window: u64, focused: bool },

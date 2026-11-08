@@ -490,6 +490,21 @@ class TabBarTest(unittest.TestCase):
         self.assertIn(' 5m', t)
         self.assertNotIn('Opus', t, 'mixed models: none shown')
 
+    def test_background_work_is_purple_and_below_working(self):
+        write_state({
+            '1': {'status': 'background', 'seen': True, 'since': 0, 'index': 1, 'project': 'api'},
+            '2': {'status': 'your_turn', 'seen': True, 'since': 0, 'index': 2, 'project': 'web'},
+        })
+        t = title(10)
+        self.assertTrue(t.startswith('<_b04cff>◐'), t)
+        self.assertIn(' 1 api +1', t)
+        self.assertNotIn('m<tab>', t, 'no timer: nothing waits on you')
+        write_state({
+            '1': {'status': 'background', 'seen': True, 'since': 0, 'index': 1, 'project': 'api'},
+            '2': {'status': 'working', 'seen': True, 'since': 0, 'index': 2, 'project': 'web'},
+        })
+        self.assertTrue(title(10).startswith('<_5fbf7a>●'), 'working leads')
+
     def test_a_crowded_tab_shows_counts(self):
         wins = [Window(i) for i in range(1, 7)]
         tab = Tab(30, wins)

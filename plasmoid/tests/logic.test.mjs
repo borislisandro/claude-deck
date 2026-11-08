@@ -20,11 +20,12 @@ test("urgency: unseen needs-you first, exited last", () => {
         s("a", "exited"),
         s("b", "your_turn", { seen: true }),
         s("c", "working"),
+        s("g", "background"),
         s("d", "your_turn", { seen: false }),
         s("e", "needs_you", { seen: true }),
         s("f", "needs_you", { seen: false }),
     ].sort((x, y) => L.urgency(x) - L.urgency(y)).map(x => x.sid)
-    assert.deepEqual(order, ["f", "e", "d", "c", "b", "a"])
+    assert.deepEqual(order, ["f", "e", "d", "c", "g", "b", "a"], "background: below working, above a seen your-turn")
 })
 
 test("groupSessions keeps on-screen order and picks each tab's most urgent session", () => {
@@ -40,7 +41,7 @@ test("groupSessions keeps on-screen order and picks each tab's most urgent sessi
     assert.equal(api.top.sid, "b")
     assert.equal(api.model, "Opus 5.5", "every session agrees")
     assert.equal(api.unseen, 1)
-    assert.deepEqual(plain(api.counts), { working: 1, needs_you: 0, your_turn: 1, exited: 0 })
+    assert.deepEqual(plain(api.counts), { working: 1, needs_you: 0, your_turn: 1, background: 0, exited: 0 })
     assert.equal(mixed.top.sid, "c")
     assert.equal(mixed.model, "", "mixed models: none for the tab")
     assert.deepEqual(plain(mixed.projects), ["web", "docs"])
@@ -78,6 +79,19 @@ test("islandMode collapses sessions, then tabs", () => {
     assert.equal(L.islandMode(6, 2, 5), "tabs")
     assert.equal(L.islandMode(9, 6, 5), "counts")
     assert.equal(L.islandMode(0, 0, 5), "sessions")
+})
+
+test("deckMood sums up the deck for the header critter", () => {
+    assert.equal(L.deckMood(false, { working: 2 }), "exited", "deck not running")
+    assert.equal(L.deckMood(true, {}), "idle", "no sessions")
+    assert.equal(L.deckMood(true, { exited: 3 }), "idle", "only exited sessions")
+    assert.equal(L.deckMood(true, { working: 2, needs_you: 1, your_turn: 1 }), "waving", "needs you wins")
+    assert.equal(L.deckMood(true, { working: 3, exited: 1 }), "juggling", "every live session working")
+    assert.equal(L.deckMood(true, { working: 1, your_turn: 2 }), "typing", "some working")
+    assert.equal(L.deckMood(true, { your_turn: 2, exited: 1 }), "coffee", "everyone waits on you")
+    assert.equal(L.deckMood(true, { background: 2 }), "juggling", "background work is busy without you")
+    assert.equal(L.deckMood(true, { background: 1, your_turn: 1 }), "typing")
+    assert.equal(L.deckMood(true, { background: 1, needs_you: 1 }), "waving")
 })
 
 test("popupUnits stays within bounds and follows opening", () => {
@@ -202,4 +216,33 @@ test("tabAspect: kitty's when known", () => {
     assert.equal(L.tabAspect({ tab: 1 }, { 1: { aspect: 0.4 } }, 0.5), 0.4)
     assert.equal(L.tabAspect({ tab: 2 }, { 1: { aspect: 0.4 } }, 0.5), 0.5)
     assert.equal(L.tabAspect(null, {}, 0.5), 0.5)
+})
+
+test("span reads like the status line", () => {
+    assert.equal(L.span(0), "<1m")
+    assert.equal(L.span(35 * 60e3), "35m")
+    assert.equal(L.span((2 * 3600 + 10 * 60) * 1e3), "2h 10m")
+    assert.equal(L.span((2 * 86400 + 3 * 3600 + 59) * 1e3), "2d 3h")
+    assert.equal(L.span(-5), "<1m")
+})
+
+test("usageMeters shows what is left of each limit", () => {
+    const now = 1_000_000_000_000
+    assert.deepEqual(plain(L.usageMeters({}, now)), [], "nothing known: nothing shown")
+    assert.deepEqual(plain(L.usageMeters(undefined, now)), [])
+    const m = plain(L.usageMeters({
+        five_hour: { used: 23.4, resets_at: now / 1000 + 7800 },
+        seven_day: { used: 85, resets_at: now / 1000 + 86400 },
+    }, now))
+    assert.deepEqual(m.map(x => [x.label, x.left, x.level]), [["5-hour", 77, "ok"], ["Weekly", 15, "low"]])
+    assert.equal(m[0].resetsIn, 7800e3)
+    // Green from half left, yellow under half, red under a fifth, and used up at 0.
+    const at = used => plain(L.usageMeters({ five_hour: { used, resets_at: now / 1000 + 60 } }, now))[0].level
+    assert.deepEqual([0, 50, 50.6, 80, 80.6, 99.4, 100].map(at), ["ok", "ok", "half", "half", "low", "low", "out"])
+    // Only the weekly known: the 5-hour still has its place, marked unknown.
+    const one = plain(L.usageMeters({ seven_day: { used: 100, resets_at: now / 1000 + 60 } }, now))
+    assert.deepEqual(one.map(x => [x.known, x.left, x.level]), [[false, 0, "ok"], [true, 0, "out"]])
+    // Past its reset time, a window is full again until Claude says otherwise.
+    const back = plain(L.usageMeters({ five_hour: { used: 100, resets_at: now / 1000 - 1 } }, now))
+    assert.deepEqual([back[0].left, back[0].level, back[0].resetsIn], [100, "ok", 0])
 })
